@@ -21,6 +21,8 @@ use irc::client::server::IrcServer;
 use irc::client::data::config::Config as IrcConfig;
 use toml::de;
 
+use std::collections::HashMap;
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
@@ -32,6 +34,8 @@ pub struct Config {
 #[serde(deny_unknown_fields)]
 pub struct Server {
     pub nickname: String,
+    #[serde(rename = "alternative_nicknames")]
+    pub alt_nicknames: Option<Vec<String>>,
     #[serde(rename = "nickserv_password")]
     pub nick_password: String,
     pub server_password: Option<String>,
@@ -45,6 +49,7 @@ pub struct Server {
 #[serde(deny_unknown_fields)]
 pub struct Channel {
     pub name: String,
+    pub password: Option<String>,
     pub modules: Vec<String>,
 }
 
@@ -52,12 +57,27 @@ impl<'a> From<&'a Server> for IrcServer {
     fn from(srv: &'a Server) -> IrcServer {
         let srv = IrcServer::from_config(IrcConfig {
             nickname: Some(srv.nickname.clone()),
+            alt_nicks: srv.alt_nicknames.clone(),
             nick_password: Some(srv.nick_password.clone()),
             server: Some(srv.address.clone()),
             port: Some(srv.port),
             password: srv.server_password.clone(),
             use_ssl: Some(true),
             channels: Some(srv.channels.iter().map(|c| c.name.clone()).collect()),
+            channel_keys: {
+                if srv.channels.iter().all(|c| c.password.is_none()) {
+                    None
+                } else {
+                    let mut hm = HashMap::with_capacity(srv.channels.len());
+                    for c in &srv.channels {
+                        if c.password.is_some() {
+                            hm.insert(c.name.clone(), c.password.as_ref().unwrap().clone());
+                        }
+                    }
+                    hm.shrink_to_fit();
+                    Some(hm)
+                }
+            },
             should_ghost: Some(true),
             ..Default::default()
         });
