@@ -21,6 +21,8 @@ use irc::client::server::IrcServer;
 use irc::client::data::config::Config as IrcConfig;
 use toml::de;
 
+use std::collections::HashMap;
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
@@ -47,6 +49,7 @@ pub struct Server {
 #[serde(deny_unknown_fields)]
 pub struct Channel {
     pub name: String,
+    pub password: Option<String>,
     pub modules: Vec<String>,
 }
 
@@ -61,6 +64,20 @@ impl<'a> From<&'a Server> for IrcServer {
             password: srv.server_password.clone(),
             use_ssl: Some(true),
             channels: Some(srv.channels.iter().map(|c| c.name.clone()).collect()),
+            channel_keys: {
+                if srv.channels.iter().all(|c| c.password.is_none()) {
+                    None
+                } else {
+                    let mut hm = HashMap::with_capacity(srv.channels.len());
+                    for c in &srv.channels {
+                        if c.password.is_some() {
+                            hm.insert(c.name.clone(), c.password.as_ref().unwrap().clone());
+                        }
+                    }
+                    hm.shrink_to_fit();
+                    Some(hm)
+                }
+            },
             should_ghost: Some(true),
             ..Default::default()
         });

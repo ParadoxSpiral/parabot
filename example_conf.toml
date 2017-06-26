@@ -7,6 +7,7 @@ address = "irc.rizon.net"
 port = 6697
 	[[server.channel]]
 	name = "#c"
+	#optional: password = "channel_key"
 	modules = ["url", "wolfram-alpha"]
 	[[server.channel]]
 	name = "#news"
