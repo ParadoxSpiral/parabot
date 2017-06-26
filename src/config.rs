@@ -79,6 +79,12 @@ impl<'a> From<&'a Server> for IrcServer {
                 }
             },
             should_ghost: Some(true),
+            version: Some(format!(
+                "Parabot {} brought to you by {}",
+                env!("CARGO_PKG_VERSION"),
+                env!("CARGO_PKG_AUTHORS")
+            )),
+            source: Some("https://github.com/ParadoxSpiral/parabot".into()),
             ..Default::default()
         });
         match srv {
