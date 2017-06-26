@@ -15,6 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
+#![feature(const_fn)]
 
 extern crate crossbeam;
 extern crate hyper;
@@ -25,8 +26,6 @@ extern crate slog_async;
 extern crate slog_term;
 extern crate toml;
 
-#[macro_use]
-extern crate error_chain;
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]
@@ -45,27 +44,6 @@ use std::sync::Arc;
 
 mod config;
 mod modules;
-
-#[allow(dead_code)]
-mod errors {
-    error_chain!{
-        foreign_links {
-        	ConfigDeserialize(::toml::de::Error);
-        	IrcServerCreation(::irc::error::Error);
-        }
-        errors {
-            UnknownModule(module: String) {
-                description("This is an unknown module")
-            }
-            DisabledModule(module: String) {
-                description("This is an unloaded module")
-            }
-            ModuleTimeout {
-            	description("A module timed out")
-            }
-        }
-    }
-}
 
 // Init logging
 lazy_static!{
@@ -93,17 +71,15 @@ fn main() {
         crit!(SLOG_ROOT, "Failed to open config file: {}", e);
         Err(e)
     });
-    let _ = file.unwrap().read_to_string(&mut cfg).or_else(|e| {
-        crit!(SLOG_ROOT, "Failed to read config file: {}", e);
-        Err(e)
-    });
-
-    let config = config::parse_config(&cfg)
+    file.unwrap()
+        .read_to_string(&mut cfg)
         .or_else(|e| {
-            crit!(SLOG_ROOT, "Failed to parse config file: {}", e);
+            crit!(SLOG_ROOT, "Failed to read config file: {}", e);
             Err(e)
         })
         .unwrap();
+
+    let config = config::parse_config(&cfg);
 
     // Spawn two threads per channel, incase modules lag on e.g. IO
     // TODO: Needs testing if this scales/is even necessary

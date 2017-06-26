@@ -8,7 +8,7 @@ port = 6697
 	[[server.channel]]
 	name = "#c"
 	#optional: password = "channel_key"
-	modules = ["url", "wolfram-alpha"]
+	modules = ["url", "tell", "weather", "wolfram-alpha"]
 	[[server.channel]]
 	name = "#news"
 	modules = ["url", "weather"]
