@@ -23,7 +23,6 @@ authors = ["ParadoxSpiral <ParadoxSpiral@riseup.net>"]
 
 [dependencies]
 crossbeam = "0.2"
-error-chain = "0.10"
 hyper = "0.11"
 irc = "0.12"
 lazy_static = "0.2"

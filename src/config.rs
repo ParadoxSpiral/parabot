@@ -15,8 +15,6 @@
 // You should have received a copy of the GNU General Public License
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
-use super::errors::*;
-
 use irc::client::server::IrcServer;
 use irc::client::data::config::Config as IrcConfig;
 use toml::de;
@@ -89,11 +87,7 @@ impl<'a> From<&'a Server> for IrcServer {
         });
         match srv {
             Err(e) => {
-                crit!(
-                    ::SLOG_ROOT,
-                    "IrcServer creation failed: {:?}",
-                    Error::from(ErrorKind::IrcServerCreation(e))
-                );
+                crit!(::SLOG_ROOT, "IrcServer creation failed: {:?}", e);
                 panic!("")
             }
             Ok(srv) => srv,
@@ -101,6 +95,12 @@ impl<'a> From<&'a Server> for IrcServer {
     }
 }
 
-pub fn parse_config(input: &str) -> Result<Config> {
-    Ok(de::from_str(input)?)
+pub fn parse_config(input: &str) -> Config {
+    let de = de::from_str(input);
+    if de.is_err() {
+        crit!(::SLOG_ROOT, "Failed to parse config file: {:?}", de);
+        panic!("")
+    } else {
+        de.unwrap()
+    }
 }
