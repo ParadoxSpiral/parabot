@@ -32,6 +32,8 @@ pub struct Config {
 #[serde(deny_unknown_fields)]
 pub struct Server {
     pub nickname: String,
+    #[serde(rename = "alternative_nicknames")]
+    pub alt_nicknames: Option<Vec<String>>,
     #[serde(rename = "nickserv_password")]
     pub nick_password: String,
     pub server_password: Option<String>,
@@ -52,6 +54,7 @@ impl<'a> From<&'a Server> for IrcServer {
     fn from(srv: &'a Server) -> IrcServer {
         let srv = IrcServer::from_config(IrcConfig {
             nickname: Some(srv.nickname.clone()),
+            alt_nicks: srv.alt_nicknames.clone(),
             nick_password: Some(srv.nick_password.clone()),
             server: Some(srv.address.clone()),
             port: Some(srv.port),

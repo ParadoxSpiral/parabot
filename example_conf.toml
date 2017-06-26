@@ -1,6 +1,8 @@
 [[server]]
 nickname = "parabot"
+#optional: alternative_nicknames = ["weebot"]
 nickserv_password = "test123"
+# optional: server_password = "test123"
 address = "irc.rizon.net"
 port = 6697
 	[[server.channel]]
@@ -13,8 +15,6 @@ port = 6697
 [[server]]
 nickname = "parabot"
 nickserv_password = "test123"
-#optional
-server_password = "test123"
 address = "irc.freenode.net"
 port = 6697
 	[[server.channel]]
