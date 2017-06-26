@@ -35,6 +35,7 @@ extern crate serde_derive;
 extern crate slog;
 
 use irc::client::server::{IrcServer, Server};
+use irc::proto::command::Command;
 use threadpool::ThreadPool;
 use slog::{Drain, Logger};
 
@@ -136,6 +137,10 @@ fn main() {
         let srv2 = srv.clone();
         let log = log.clone();
         scope.spawn(move || {
+        	// Handle registration
+        	srv1.send(Command::PASS(cfg.nick_password.clone()));
+        	srv1.send(Command::NICK(cfg.nickname.clone()));
+        	srv1.send(Command::USER(cfg.nickname.clone(), "2".into(), cfg.nickname.clone()));
             srv1.for_each_incoming(|msg| {
                 let cfg = cfg.clone();
                 let srv = srv2.clone();

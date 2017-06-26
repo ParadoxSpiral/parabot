@@ -22,11 +22,8 @@ use slog::Logger;
 use super::config::Server;
 use super::errors::*;
 
+const COMMAND_MODIFIER: &'static str = ".";
+
 pub fn handle(cfg: &Server, srv: &IrcServer, log: &Logger, msg: Message) {
-    warn!(
-        log,
-        "message: {:?}; {}",
-        msg,
-        Error::from(ErrorKind::UnknownModule(msg.to_string()))
-    );
+    debug!(log, "Received message: {:?}", msg);
 }
