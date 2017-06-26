@@ -1,0 +1,80 @@
+// Copyright (C) 2017  ParadoxSpiral
+//
+// This file is part of parabot.
+//
+// Parabot is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Parabot is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
+
+use super::errors::*;
+
+use irc::client::server::IrcServer;
+use irc::client::data::config::Config as IrcConfig;
+use toml::de;
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Config {
+    #[serde(rename = "server")]
+    pub servers: Vec<Server>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Server {
+    pub nickname: String,
+    #[serde(rename = "nickserv_password")]
+    pub nick_password: String,
+    pub server_password: Option<String>,
+    pub address: String,
+    pub port: u16,
+    #[serde(rename = "channel")]
+    pub channels: Vec<Channel>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Channel {
+    pub name: String,
+    pub modules: Vec<String>,
+}
+
+impl<'a> From<&'a Server> for IrcServer {
+    fn from(srv: &'a Server) -> IrcServer {
+        let srv = IrcServer::from_config(IrcConfig {
+            nickname: Some(srv.nickname.clone()),
+            nick_password: Some(srv.nick_password.clone()),
+            server: Some(srv.address.clone()),
+            port: Some(srv.port),
+            password: srv.server_password.clone(),
+            use_ssl: Some(true),
+            channels: Some(srv.channels.iter().map(|c| c.name.clone()).collect()),
+            should_ghost: Some(true),
+            ..Default::default()
+        });
+        match srv {
+            Err(e) => {
+                crit!(
+                    ::SLOG_ROOT,
+                    "IrcServer creation failed: {:?}",
+                    Error::from(ErrorKind::IrcServerCreation(e))
+                );
+                panic!("")
+            }
+            Ok(srv) => srv,
+        }
+    }
+}
+
+pub fn parse_config(input: &str) -> Result<Config> {
+    Ok(de::from_str(input)?)
+}
