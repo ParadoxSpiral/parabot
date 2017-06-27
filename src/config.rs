@@ -25,34 +25,35 @@ use std::collections::HashMap;
 #[serde(deny_unknown_fields)]
 pub struct Config {
     #[serde(rename = "server")]
-    pub servers: Vec<Server>,
+    pub servers: Vec<ServerCfg>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Server {
+pub struct ServerCfg {
     pub nickname: String,
     #[serde(rename = "alternative_nicknames")]
     pub alt_nicknames: Option<Vec<String>>,
     #[serde(rename = "nickserv_password")]
     pub nick_password: String,
     pub server_password: Option<String>,
+    pub database: String,
     pub address: String,
     pub port: u16,
     #[serde(rename = "channel")]
-    pub channels: Vec<Channel>,
+    pub channels: Vec<ChannelCfg>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Channel {
+pub struct ChannelCfg {
     pub name: String,
     pub password: Option<String>,
     pub modules: Vec<String>,
 }
 
-impl<'a> From<&'a Server> for IrcServer {
-    fn from(srv: &'a Server) -> IrcServer {
+impl<'a> From<&'a ServerCfg> for IrcServer {
+    fn from(srv: &'a ServerCfg) -> IrcServer {
         let srv = IrcServer::from_config(IrcConfig {
             nickname: Some(srv.nickname.clone()),
             alt_nicks: srv.alt_nicknames.clone(),
@@ -88,7 +89,7 @@ impl<'a> From<&'a Server> for IrcServer {
         match srv {
             Err(e) => {
                 crit!(::SLOG_ROOT, "IrcServer creation failed: {:?}", e);
-                panic!("")
+                panic!("IrcServer creation failed: {:?}", e)
             }
             Ok(srv) => srv,
         }
@@ -99,7 +100,7 @@ pub fn parse_config(input: &str) -> Config {
     let de = de::from_str(input);
     if de.is_err() {
         crit!(::SLOG_ROOT, "Failed to parse config file: {:?}", de);
-        panic!("")
+        panic!("Failed to parse config file: {:?}", de)
     } else {
         de.unwrap()
     }
