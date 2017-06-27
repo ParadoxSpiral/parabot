@@ -17,15 +17,21 @@
 
 #![feature(const_fn)]
 
+extern crate chrono;
 extern crate crossbeam;
 extern crate hyper;
 extern crate irc;
+extern crate parking_lot;
 extern crate serde;
 extern crate threadpool;
 extern crate slog_async;
 extern crate slog_term;
 extern crate toml;
 
+#[macro_use]
+extern crate diesel;
+#[macro_use]
+extern crate diesel_codegen;
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]
@@ -43,7 +49,9 @@ use std::io::Read;
 use std::sync::Arc;
 
 mod config;
+pub mod models;
 mod modules;
+pub mod schema;
 
 // Init logging
 lazy_static!{
@@ -95,6 +103,9 @@ fn main() {
         num_threads / 2
     );
 
+    // Init modules that require init
+    modules::init(&config, &SLOG_ROOT);
+
     // Init state of each server
     let mut state = Vec::with_capacity(config.servers.len());
     for cfg in config.servers.into_iter() {
@@ -113,8 +124,9 @@ fn main() {
         let log = log.clone();
         scope.spawn(move || {
             // Handle registration etc, TODO: log errors
-            srv1.identify();
-            srv1.send_mode(&cfg.nickname, &[Mode::Plus(UserMode::Invisible, None)]);
+            srv1.identify().unwrap();
+            srv1.send_mode(&cfg.nickname, &[Mode::Plus(UserMode::Invisible, None)])
+                .unwrap();
             // Listen for, and handle, messages
             srv1.for_each_incoming(|msg| {
                 let cfg = cfg.clone();

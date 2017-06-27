@@ -3,6 +3,7 @@ nickname = "parabot"
 #optional: alternative_nicknames = ["weebot"]
 nickserv_password = "test123"
 # optional: server_password = "test123"
+database = "parabot_empty.db" # Needs actual URL, different servers may populate the same db
 address = "irc.rizon.net"
 port = 6697
 	[[server.channel]]
