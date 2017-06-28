@@ -154,7 +154,7 @@ pub fn handle_reply(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Messag
                          at a step. Try rejoining, or notifying the admin.",
                     );
                     if let Err(e) = res {
-                        // Don't crash the thread because other send may succeed
+                        // Don't crash the thread because other sends may succeed
                         warn!(log, "Failed to send message to {}: {}", nick, e);
                     }
                 }
@@ -184,13 +184,13 @@ fn send_tells(srv: &IrcServer, log: &Logger, tells: &[models::PendingTell]) {
         };
 
         if let Err(e) = res {
-            // Don't crash the thread because other send may succeed
+            // Don't crash the thread because other sends may succeed
             warn!(log, "Failed to send message to {}: {}", t.target_nick, e);
         }
     }
 }
 
-pub fn add(cfg: &ServerCfg, log: &Logger, private: bool, msg: &Message) -> String {
+pub fn add(cfg: &ServerCfg, log: &Logger, msg: &Message, private: bool) -> String {
     if let Command::PRIVMSG(ref target, ref content) = msg.command {
         let source_nick = msg.source_nickname().unwrap();
 
@@ -200,7 +200,7 @@ pub fn add(cfg: &ServerCfg, log: &Logger, private: bool, msg: &Message) -> Strin
             s
         } else {
             debug!(log, "invalid tell: {:?}", msg);
-            return "Invalid `.tell` syntax, try: `.tell nick a neat message`".into();
+            return "Invalid `.tell` syntax, try: `.tell <nick> <message>`".into();
         };
 
         let date = &Utc::now().to_rfc2822()[..26];

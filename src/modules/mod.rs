@@ -28,6 +28,7 @@ use super::config::{Config, ServerCfg};
 
 mod help;
 mod tell;
+mod weather;
 
 const COMMAND_MODIFIER: char = '.';
 // https://tools.ietf.org/html/rfc2812#section-1.3
@@ -128,18 +129,23 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
                     priv_or_notice("Beep boop, I'm a bot!");
                 } else if content[1..].starts_with("help") {
                     trace!(log, "Replying to .help");
-                    let reply_target = if private {
-                        msg.source_nickname().unwrap()
-                    } else {
-                        target
-                    };
+                    let reply_target = get_reply_target(&msg, private);
                     let reply = help::handle(cfg, &*target, content, private);
                     send_segmented_message(cfg, srv, log, reply_target, &reply, private);
                 } else if (private || module_enabled_channel(cfg, &*target, "tell")) &&
                            content[1..].starts_with("tell")
                 {
                     trace!(log, "Starting .tell");
-                    priv_or_notice(&tell::add(cfg, log, private, &msg));
+                    let reply_target = get_reply_target(&msg, private);
+                    let reply = tell::add(cfg, log, &msg, private);
+                    send_segmented_message(cfg, srv, log, reply_target, &reply, private);
+                } else if (private || module_enabled_channel(cfg, &*target, "weather")) &&
+                           content[1..].starts_with("weather")
+                {
+                    trace!(log, "Starting .weather");
+                    let reply_target = get_reply_target(&msg, private);
+                    let reply = weather::handle(cfg, &*target, content, private);
+                    send_segmented_message(cfg, srv, log, reply_target, &reply, private);
                 } else {
                     warn!(log, "Unknown command {}", &content[1..]);
                 }
@@ -157,6 +163,19 @@ fn module_enabled_channel(cfg: &ServerCfg, target: &str, module: &str) -> bool {
     cfg.channels.iter().any(|c| {
         c.name == target && c.modules.iter().any(|m| m == module)
     })
+}
+
+fn get_reply_target(msg: &Message, private: bool) -> &str {
+    // Expand to other commands if needed
+    if let Command::PRIVMSG(ref target, ..) = msg.command {
+        if private {
+            msg.source_nickname().unwrap()
+        } else {
+            target
+        }
+    } else {
+        unreachable!()
+    }
 }
 
 fn send_segmented_message(

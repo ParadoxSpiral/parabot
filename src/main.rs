@@ -119,7 +119,7 @@ fn main() {
         state.push((Arc::new(cfg), srv, log));
     }
     crossbeam::scope(move |scope| for &(ref cfg, ref srv, ref log) in &state {
-    	// TODO: Is there a way to do less cloning?
+        // TODO: Is there a way to do less cloning?
         let pool = pool.clone();
         let cfg = cfg.clone();
         let srv1 = srv.clone();
