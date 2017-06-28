@@ -26,6 +26,7 @@ use std::collections::HashMap;
 
 use super::config::{Config, ServerCfg};
 
+mod help;
 mod tell;
 
 const COMMAND_MODIFIER: char = '.';
@@ -74,7 +75,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
             HOSTNAMES
                 .write()
                 .entry(cfg.address.clone())
-                .or_insert(msg.prefix.as_ref().unwrap().clone());
+                .or_insert_with(|| msg.prefix.as_ref().unwrap().clone());
         }
         Command::Raw(ref s, ..) if s == "250" || s == "265" || s == "266" => {
             trace!(log, "{:?}", msg)
@@ -85,13 +86,13 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
                 // We don't check if the module is enabled, because it's our responsibility to
                 // deliver the msg asap without fail, even if the bot owner disabled the module;
                 // If they *really* want, they can clean the database
-                tell::handle(cfg, srv, log, &msg, false);
+                tell::handle_join(cfg, srv, log, &msg);
             }
         }
         Command::Response(Response::RPL_NAMREPLY, ..) => {
             // The bot joined a channel, and asked for nicknames to see if they have any
             // pending tells. (NOTE: something, maybe the irc crate, asks automatically)
-            tell::handle(cfg, srv, log, &msg, true);
+            tell::handle_reply(cfg, srv, log, &msg);
         }
         Command::PRIVMSG(ref target, ref content) => {
             debug!(log, "PRIVMSG to {}: {}", target, content);
@@ -99,26 +100,26 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
             // Test if this msg was sent to a channel. When replying,
             // we want to use NOTICE in that case
             let first_char = target.chars().nth(0).unwrap();
-            let chan_msg = CHANNEL_PREFIXES.iter().any(|p| &first_char == p);
+            let private = !CHANNEL_PREFIXES.iter().any(|p| &first_char == p);
             let priv_or_notice = |to_send: &str| {
-                if let Err(e) = if chan_msg {
-                    srv.send_notice(target, to_send)
-                } else {
+                if let Err(e) = if private {
                     srv.send_privmsg(msg.source_nickname().unwrap(), to_send)
+                } else {
+                    srv.send_notice(target, to_send)
                 } {
                     crit!(
                         log,
                         "Failed to send message to {}: {:?}",
-                        if chan_msg {
-                            target
-                        } else {
+                        if private {
                             msg.source_nickname().unwrap()
+                        } else {
+                            target
                         },
                         e
                     )
                 };
             };
-            trace!(log, "in channel: {}", chan_msg);
+            trace!(log, "private: {}", private);
 
             // Check if msg is a command, handle command/context modules
             if content.chars().nth(0).unwrap() == COMMAND_MODIFIER {
@@ -126,55 +127,19 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
                     trace!(log, "Replying to .bots");
                     priv_or_notice("Beep boop, I'm a bot!");
                 } else if content[1..].starts_with("help") {
-                    let reply = if &content[1..] == "help" {
-                        trace!(log, "Replying to .help");
-                        if chan_msg {
-                            format!(
-                                "Hi! For more information, use .help <module>. Enabled modules: {:?}",
-                                cfg.channels
-                                    .iter()
-                                    .find(|c| &*c.name == &*target)
-                                    .unwrap()
-                                    .modules
-                                    .as_slice()
-                            )
-                        } else {
-                            "Hi! For more information, use .help <module>. This is a private \
-                             message, so I cannot tell you about any channel's enabled modules."
-                                .to_owned()
-                        }
+                    trace!(log, "Replying to .help");
+                    let reply_target = if private {
+                        msg.source_nickname().unwrap()
                     } else {
-                        // Starts with help, e.g. more args
-                        match &content[6..] {
-                            "bots" | ".bots" => {
-                                ".bots will (hopefully) cause all bots in the channel to reply."
-                                    .to_owned()
-                            }
-                            "tell" | ".tell" => {
-                                ".tell <nick> <message> will tell the user with <nick> <message>, \
-                                 when they join a channel shared with me"
-                                    .to_owned()
-                            }
-                            _ => "Unknown or undocumented module, sorry.".to_owned()
-                        }
+                        target
                     };
-                    send_segmented_message(
-                        cfg,
-                        srv,
-                        log,
-                        &if chan_msg {
-                            target
-                        } else {
-                            msg.source_nickname().unwrap()
-                        },
-                        &reply,
-                        !chan_msg,
-                    );
-                } else if (!chan_msg || module_enabled_channel(cfg, &*target, "tell")) &&
+                    let reply = help::handle(cfg, &*target, content, private);
+                    send_segmented_message(cfg, srv, log, reply_target, &reply, private);
+                } else if (private || module_enabled_channel(cfg, &*target, "tell")) &&
                            content[1..].starts_with("tell")
                 {
                     trace!(log, "Starting .tell");
-                    priv_or_notice(&tell::add(cfg, log, !chan_msg, &msg));
+                    priv_or_notice(&tell::add(cfg, log, private, &msg));
                 } else {
                     warn!(log, "Unknown command {}", &content[1..]);
                 }
@@ -223,19 +188,18 @@ fn send_segmented_message(
         trace!(log, "Message does not exceed limit");
         send_err(msg);
     } else {
-        let mut count = 0 + fix_bytes;
+        let mut count = fix_bytes;
         let mut msg = String::with_capacity(MESSAGE_BYTES_LIMIT - fix_bytes);
         for g in graphemes {
             let len = g.bytes().len();
             if count + len >= MESSAGE_BYTES_LIMIT - fix_bytes {
                 trace!(log, "Sending {} cut msg: {:?}", target, &msg);
                 send_err(&msg);
-                count = 0 + fix_bytes;
+                count = fix_bytes;
                 msg.clear();
             }
             count += len;
             msg.push_str(g);
-
         }
         if !msg.is_empty() {
             send_err(&msg);

@@ -59,113 +59,133 @@ pub fn init(cfg: &Config, log: &Logger) {
     }
 }
 
-// TODO: seperate into handle_join, handle_namesreply
-pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message, names_reply: bool) {
+pub fn handle_join(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) {
     let hm = PENDING_TELLS_HM.lock();
     let mut pending = hm.get(&cfg.address).unwrap().lock();
     if *pending != 0 {
-        let (chan, target_nick) = if let Command::JOIN(ref chan, ..) = msg.command {
-            // TODO: Can we avoid cloning?
-            (
-                chan.clone(),
-                vec![msg.source_nickname().unwrap().to_owned()],
-            )
-        } else if let Command::Response(Response::RPL_NAMREPLY, ref chan, ref users) = msg.command {
-            debug_assert_eq!(cfg.nickname, chan[0]);
-            (
-                chan[2].clone(),
-                users
-                    .as_ref()
-                    .unwrap()
-                    .split(' ')
-                    .filter(|u| u != &cfg.nickname)
-                    .map(|u| u.replace('@', "").replace('+', ""))
-                    .collect(),
-            )
-        } else {
-            unreachable!()
-        };
+        if let Command::JOIN(ref chan, ..) = msg.command {
+            let target_nick = msg.source_nickname().unwrap();
 
-        let conn = establish_connection(cfg, log);
-        let tells = if names_reply {
-            // The bot joined, check all channel users
-            if let Command::Response(Response::RPL_NAMREPLY, ..) = msg.command {
-                dsl::pending_tells
-                    .filter(dsl::server_addr.eq(&cfg.address))
-                    .filter(dsl::target_nick.eq_any(&target_nick))
-                    .filter(dsl::channel.eq(&chan).or(dsl::channel.is_null()))
-                    .load::<models::PendingTell>(&conn)
-            } else {
-                unreachable!()
-            }
-
-        } else {
-            dsl::pending_tells
+            let conn = establish_connection(cfg, log);
+            let tells = dsl::pending_tells
                 .filter(dsl::server_addr.eq(&cfg.address))
-                .filter(dsl::target_nick.eq(&target_nick[0]))
-                .filter(dsl::channel.eq(&chan).or(dsl::channel.is_null()))
-                .load::<models::PendingTell>(&conn)
-        };
-        let tells = if let Err(e) = tells {
-            crit!(log, "Failed to load pending tells: {:?}", e);
-            panic!("")
-        } else {
-            tells.unwrap()
-        };
-        *pending -= 1;
-        drop(pending);
-        debug!(log, "Found pending tells: {:?}", tells);
+                .filter(dsl::target_nick.eq(&target_nick))
+                .filter(dsl::channel.eq(&*chan).or(dsl::channel.is_null()))
+                .load::<models::PendingTell>(&conn);
+            let tells = if let Err(e) = tells {
+                crit!(log, "Failed to load pending tells: {:?}", e);
+                panic!("")
+            } else {
+                tells.unwrap()
+            };
 
-        if let Err(e) = if let Command::JOIN(..) = msg.command {
-            diesel::delete(
+            *pending -= 1;
+            drop(pending);
+            debug!(log, "Found pending tells: {:?}", tells);
+
+            if let Err(e) = diesel::delete(
                 dsl::pending_tells
                     .filter(dsl::server_addr.eq(&cfg.address))
-                    .filter(dsl::target_nick.eq(&target_nick[0]))
-                    .filter(dsl::channel.eq(&chan).or(dsl::channel.is_null())),
+                    .filter(dsl::target_nick.eq(&target_nick))
+                    .filter(dsl::channel.eq(&*chan).or(dsl::channel.is_null())),
             ).execute(&conn)
-        } else if let Command::Response(Response::RPL_NAMREPLY, ..) = msg.command {
-            diesel::delete(
-                dsl::pending_tells
-                    .filter(dsl::server_addr.eq(&cfg.address))
-                    .filter(dsl::target_nick.eq_any(&target_nick))
-                    .filter(dsl::channel.eq(&chan).or(dsl::channel.is_null())),
-            ).execute(&conn)
-        } else {
-            unreachable!()
-        } {
-            crit!(log, "Failed to delete tells: {:?}", e);
-            for nick in &target_nick {
+            {
+                crit!(log, "Failed to delete tells: {:?}", e);
                 let res = srv.send_privmsg(
-                    nick,
+                    target_nick,
                     "You have some pending tells, but I failed \
                      at a step. Try rejoining, or notifying the admin.",
                 );
                 if let Err(e) = res {
-                    // Don't crash the thread because other send may succeed
-                    warn!(log, "Failed to send message to {}: {}", nick, e);
+                    crit!(log, "Failed to send message to {}: {}", &target_nick, e);
                 }
             }
-            panic!("");
+
+            send_tells(srv, log, &tells);
+        } else {
+            unreachable!()
         }
+    }
+}
 
-        for t in tells {
-            let msg = format!(
-                "{}: {} wanted to tell you on {} UTC: {}",
-                &t.target_nick,
-                t.source_nick,
-                t.date,
-                t.message
-            );
-            let res = if t.channel.is_some() {
-                srv.send_notice(&t.channel.unwrap(), &msg)
+pub fn handle_reply(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) {
+    let hm = PENDING_TELLS_HM.lock();
+    let mut pending = hm.get(&cfg.address).unwrap().lock();
+    if *pending != 0 {
+        if let Command::Response(Response::RPL_NAMREPLY, ref chan, ref users) = msg.command {
+            debug_assert_eq!(cfg.nickname, chan[0]);
+            let chan = &chan[2];
+            let target_nicks = users
+                .as_ref()
+                .unwrap()
+                .split(' ')
+                .filter(|u| u != &cfg.nickname)
+                .map(|u| u.replace('@', "").replace('+', ""))
+                .collect::<Vec<_>>();
+
+            let conn = establish_connection(cfg, log);
+            let tells = dsl::pending_tells
+                .filter(dsl::server_addr.eq(&cfg.address))
+                .filter(dsl::target_nick.eq_any(&target_nicks))
+                .filter(dsl::channel.eq(&*chan).or(dsl::channel.is_null()))
+                .load::<models::PendingTell>(&conn);
+            let tells = if let Err(e) = tells {
+                crit!(log, "Failed to load pending tells: {:?}", e);
+                panic!("")
             } else {
-                srv.send_privmsg(&t.target_nick, &msg)
+                tells.unwrap()
             };
+            *pending -= tells.len();
+            drop(pending);
+            debug!(log, "Found pending tells: {:?}", tells);
 
-            if let Err(e) = res {
-                // Don't crash the thread because other send may succeed
-                warn!(log, "Failed to send message to {}: {}", t.target_nick, e);
+            if let Err(e) = diesel::delete(
+                dsl::pending_tells
+                    .filter(dsl::server_addr.eq(&cfg.address))
+                    .filter(dsl::target_nick.eq_any(&target_nicks))
+                    .filter(dsl::channel.eq(&*chan).or(dsl::channel.is_null())),
+            ).execute(&conn)
+            {
+                crit!(log, "Failed to delete tells: {:?}", e);
+                for nick in &target_nicks {
+                    let res = srv.send_privmsg(
+                        nick,
+                        "You have some pending tells, but I failed \
+                         at a step. Try rejoining, or notifying the admin.",
+                    );
+                    if let Err(e) = res {
+                        // Don't crash the thread because other send may succeed
+                        warn!(log, "Failed to send message to {}: {}", nick, e);
+                    }
+                }
+                panic!("");
             }
+
+            send_tells(srv, log, &tells);
+        } else {
+            unreachable!()
+        }
+    }
+}
+
+fn send_tells(srv: &IrcServer, log: &Logger, tells: &[models::PendingTell]) {
+    for t in tells {
+        let msg = format!(
+            "{}: {} wanted to tell you on {} UTC: {}",
+            &t.target_nick,
+            t.source_nick,
+            t.date,
+            t.message
+        );
+        let res = if t.channel.is_some() {
+            srv.send_notice(t.channel.as_ref().unwrap(), &msg)
+        } else {
+            srv.send_privmsg(&t.target_nick, &msg)
+        };
+
+        if let Err(e) = res {
+            // Don't crash the thread because other send may succeed
+            warn!(log, "Failed to send message to {}: {}", t.target_nick, e);
         }
     }
 }
