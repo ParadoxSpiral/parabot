@@ -74,7 +74,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
             HOSTNAMES
                 .write()
                 .entry(cfg.address.clone())
-                .or_insert(msg.prefix.as_ref().unwrap().clone());
+                .or_insert_with(||msg.prefix.as_ref().unwrap().clone());
         }
         Command::Raw(ref s, ..) if s == "250" || s == "265" || s == "266" => {
             trace!(log, "{:?}", msg)
@@ -85,13 +85,13 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
                 // We don't check if the module is enabled, because it's our responsibility to
                 // deliver the msg asap without fail, even if the bot owner disabled the module;
                 // If they *really* want, they can clean the database
-                tell::handle(cfg, srv, log, &msg, false);
+                tell::handle_join(cfg, srv, log, &msg);
             }
         }
         Command::Response(Response::RPL_NAMREPLY, ..) => {
             // The bot joined a channel, and asked for nicknames to see if they have any
             // pending tells. (NOTE: something, maybe the irc crate, asks automatically)
-            tell::handle(cfg, srv, log, &msg, true);
+            tell::handle_reply(cfg, srv, log, &msg);
         }
         Command::PRIVMSG(ref target, ref content) => {
             debug!(log, "PRIVMSG to {}: {}", target, content);
@@ -130,10 +130,11 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
                         trace!(log, "Replying to .help");
                         if chan_msg {
                             format!(
-                                "Hi! For more information, use .help <module>. Enabled modules: {:?}",
+                                "Hi! For more information, use .help <module>. \
+                                 Enabled modules: {:?}",
                                 cfg.channels
                                     .iter()
-                                    .find(|c| &*c.name == &*target)
+                                    .find(|c| *c.name == *target)
                                     .unwrap()
                                     .modules
                                     .as_slice()
@@ -152,17 +153,32 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
                             }
                             "tell" | ".tell" => {
                                 ".tell <nick> <message> will tell the user with <nick> <message>, \
-                                 when they join a channel shared with me"
+                                 when they join a channel shared with me."
                                     .to_owned()
                             }
-                            _ => "Unknown or undocumented module, sorry.".to_owned()
+                            "weather" | ".weather" => {
+                                unimplemented!();
+                                ".weather . (Powered by Dark Sky)".to_owned()
+                            }
+                            "wa" | ".wa" => {
+                            	unimplemented!();
+                                ".wa <query> will query wolfram-alpha about <query>.".to_owned()
+                            }
+                            "url" => {
+                            	unimplemented!();
+                                "url fetches urls posted in the channel, and displays their \
+                                 metadata, and depending on the website, \
+                                 more e.g. youtube views."
+                                    .to_owned()
+                            }
+                            _ => "Unknown or undocumented module, sorry.".to_owned(),
                         }
                     };
                     send_segmented_message(
                         cfg,
                         srv,
                         log,
-                        &if chan_msg {
+                        if chan_msg {
                             target
                         } else {
                             msg.source_nickname().unwrap()
@@ -223,14 +239,14 @@ fn send_segmented_message(
         trace!(log, "Message does not exceed limit");
         send_err(msg);
     } else {
-        let mut count = 0 + fix_bytes;
+        let mut count = fix_bytes;
         let mut msg = String::with_capacity(MESSAGE_BYTES_LIMIT - fix_bytes);
         for g in graphemes {
             let len = g.bytes().len();
             if count + len >= MESSAGE_BYTES_LIMIT - fix_bytes {
                 trace!(log, "Sending {} cut msg: {:?}", target, &msg);
                 send_err(&msg);
-                count = 0 + fix_bytes;
+                count = fix_bytes;
                 msg.clear();
             }
             count += len;
