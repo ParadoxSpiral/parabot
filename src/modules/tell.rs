@@ -154,8 +154,7 @@ pub fn handle_names_reply(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &
                          at a step. Try rejoining, or notifying my owner.",
                     );
                     if let Err(e) = res {
-                        // Don't crash the thread because other sends may succeed
-                        warn!(log, "Failed to send message to {}: {}", nick, e);
+                        crit!(log, "Failed to send message to {}: {}", nick, e);
                     }
                 }
                 panic!("");
