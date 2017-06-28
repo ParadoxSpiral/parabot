@@ -191,14 +191,14 @@ fn send_segmented_message(
         trace!(log, "Message does not exceed limit");
         send_err(msg);
     } else {
-        let mut count = fix_bytes;
+        let mut count = 0;
         let mut msg = String::with_capacity(MESSAGE_BYTES_LIMIT - fix_bytes);
         for g in graphemes {
             let len = g.bytes().len();
             if count + len >= MESSAGE_BYTES_LIMIT - fix_bytes {
                 trace!(log, "Sending {} cut msg: {:?}", target, &msg);
                 send_err(&msg);
-                count = fix_bytes;
+                count = 0;
                 msg.clear();
             }
             count += len;
