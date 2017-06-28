@@ -70,6 +70,9 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
         Command::Response(Response::RPL_TOPIC, ..) |
         Command::PART(..) |
         Command::ChannelMODE(..) => trace!(log, "{:?}", msg),
+        Command::Raw(ref s, ..) if s == "250" || s == "265" || s == "266" => {
+            trace!(log, "{:?}", msg)
+        }
         Command::Raw(ref s, ..) if s == "MODE" => {
             trace!(log, "Received MODE, hostname: {:?}", msg.prefix);
 
@@ -77,9 +80,6 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
                 .write()
                 .entry(cfg.address.clone())
                 .or_insert_with(|| msg.prefix.as_ref().unwrap().clone());
-        }
-        Command::Raw(ref s, ..) if s == "250" || s == "265" || s == "266" => {
-            trace!(log, "{:?}", msg)
         }
         Command::JOIN(..) => {
             // The case of the bot joining a channel is handled by RPL_NAMREPLY
