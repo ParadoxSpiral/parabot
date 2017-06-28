@@ -128,18 +128,13 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
                     priv_or_notice("Beep boop, I'm a bot!");
                 } else if content[1..].starts_with("help") {
                     trace!(log, "Replying to .help");
-                    send_segmented_message(
-                        cfg,
-                        srv,
-                        log,
-                        if private {
-                            msg.source_nickname().unwrap()
-                        } else {
-                            target
-                        },
-                        &help::handle(cfg, &*target, content, private),
-                        private,
-                    );
+                    let reply_target = if private {
+                        msg.source_nickname().unwrap()
+                    } else {
+                        target
+                    };
+                    let reply = help::handle(cfg, &*target, content, private);
+                    send_segmented_message(cfg, srv, log, reply_target, &reply, private);
                 } else if (private || module_enabled_channel(cfg, &*target, "tell")) &&
                            content[1..].starts_with("tell")
                 {
@@ -205,7 +200,6 @@ fn send_segmented_message(
             }
             count += len;
             msg.push_str(g);
-
         }
         if !msg.is_empty() {
             send_err(&msg);
