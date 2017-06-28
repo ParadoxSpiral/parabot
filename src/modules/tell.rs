@@ -36,7 +36,7 @@ lazy_static!{
     };
 }
 
-// Read DB to get init value
+// Read DB to get init values
 pub fn init(cfg: &Config, log: &Logger) {
     let mut hm = PENDING_TELLS_HM.lock();
     for srv in &cfg.servers {
@@ -71,15 +71,15 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message, nam
                 vec![msg.source_nickname().unwrap().to_owned()],
             )
         } else if let Command::Response(Response::RPL_NAMREPLY, ref chan, ref users) = msg.command {
-            debug_assert!(cfg.nickname == chan[0]);
+            debug_assert_eq!(cfg.nickname, chan[0]);
             (
                 chan[2].clone(),
                 users
                     .as_ref()
                     .unwrap()
-                    .split(" ")
+                    .split(' ')
                     .filter(|u| u != &cfg.nickname)
-                    .map(|u| u.replace("@", "").replace("+", ""))
+                    .map(|u| u.replace('@', "").replace('+', ""))
                     .collect(),
             )
         } else {
@@ -123,20 +123,11 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message, nam
                     .filter(dsl::target_nick.eq(&target_nick[0]))
                     .filter(dsl::channel.eq(&chan).or(dsl::channel.is_null())),
             ).execute(&conn)
-        } else if let Command::Response(Response::RPL_NAMREPLY, _, ref users) = msg.command {
+        } else if let Command::Response(Response::RPL_NAMREPLY, ..) = msg.command {
             diesel::delete(
                 dsl::pending_tells
                     .filter(dsl::server_addr.eq(&cfg.address))
-                    .filter(
-                        dsl::target_nick.eq_any(
-                            users
-                                .as_ref()
-                                .unwrap()
-                                .split(" ")
-                                .filter(|u| u != &cfg.nickname)
-                                .map(|u| u.replace("@", "").replace("+", "")),
-                        ),
-                    )
+                    .filter(dsl::target_nick.eq_any(&target_nick))
                     .filter(dsl::channel.eq(&chan).or(dsl::channel.is_null())),
             ).execute(&conn)
         } else {
@@ -183,7 +174,7 @@ pub fn add(cfg: &ServerCfg, log: &Logger, private: bool, msg: &Message) -> Strin
     if let Command::PRIVMSG(ref target, ref content) = msg.command {
         let source_nick = msg.source_nickname().unwrap();
 
-        let mut split = content[6..].splitn(2, " ");
+        let mut split = content[6..].splitn(2, ' ');
         let target_nick = split.next().unwrap();
         let target_msg = if let Some(s) = split.next() {
             s
@@ -192,11 +183,11 @@ pub fn add(cfg: &ServerCfg, log: &Logger, private: bool, msg: &Message) -> Strin
             return "Invalid `.tell` syntax, try: `.tell nick a neat message`".into();
         };
 
-        let date = Utc::now().to_rfc2822();
+        let date = &Utc::now().to_rfc2822()[..26];
         let pending_tell = models::NewPendingTell {
-            date: &date,
+            date: date,
             server_addr: &cfg.address,
-            channel: { if private { None } else { Some(&target) } },
+            channel: { if private { None } else { Some(target) } },
             source_nick: source_nick,
             target_nick: target_nick,
             message: target_msg,
