@@ -33,7 +33,8 @@ parking_lot = {version = "0.4", features = ["nightly"]}
 serde = "1.0"
 serde_derive = "1.0"
 threadpool = "1.3"
-slog = "2.0"
+slog = { version = "2.0", features = ["max_level_trace", "release_max_level_warn"] }
 slog-async = "2.0"
 slog-term = "2.0"
 toml = "0.4"
+unicode-segmentation = "1.2"

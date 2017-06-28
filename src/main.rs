@@ -16,6 +16,7 @@
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
 #![feature(const_fn)]
+#![allow(unknown_lints)]
 
 extern crate chrono;
 extern crate crossbeam;
@@ -27,6 +28,7 @@ extern crate threadpool;
 extern crate slog_async;
 extern crate slog_term;
 extern crate toml;
+extern crate unicode_segmentation;
 
 #[macro_use]
 extern crate diesel;
