@@ -59,7 +59,7 @@ pub fn init(cfg: &Config, log: &Logger) {
     }
 }
 
-pub fn handle_join(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) {
+pub fn handle_user_join(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) {
     let hm = PENDING_TELLS_HM.lock();
     let mut pending = hm.get(&cfg.address).unwrap().lock();
     if *pending != 0 {
@@ -94,21 +94,21 @@ pub fn handle_join(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message
                 let res = srv.send_privmsg(
                     target_nick,
                     "You have some pending tells, but I failed \
-                     at a step. Try rejoining, or notifying the admin.",
+                     at a step. Try rejoining, or notifying my owner.",
                 );
                 if let Err(e) = res {
                     crit!(log, "Failed to send message to {}: {}", &target_nick, e);
                 }
             }
 
-            send_tells(srv, log, &tells);
+            send_tells(cfg, srv, log, &tells);
         } else {
             unreachable!()
         }
     }
 }
 
-pub fn handle_reply(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) {
+pub fn handle_names_reply(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) {
     let hm = PENDING_TELLS_HM.lock();
     let mut pending = hm.get(&cfg.address).unwrap().lock();
     if *pending != 0 {
@@ -151,24 +151,24 @@ pub fn handle_reply(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Messag
                     let res = srv.send_privmsg(
                         nick,
                         "You have some pending tells, but I failed \
-                         at a step. Try rejoining, or notifying the admin.",
+                         at a step. Try rejoining, or notifying my owner.",
                     );
                     if let Err(e) = res {
-                        // Don't crash the thread because other send may succeed
+                        // Don't crash the thread because other sends may succeed
                         warn!(log, "Failed to send message to {}: {}", nick, e);
                     }
                 }
                 panic!("");
             }
 
-            send_tells(srv, log, &tells);
+            send_tells(cfg, srv, log, &tells);
         } else {
             unreachable!()
         }
     }
 }
 
-fn send_tells(srv: &IrcServer, log: &Logger, tells: &[models::PendingTell]) {
+fn send_tells(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, tells: &[models::PendingTell]) {
     for t in tells {
         let msg = format!(
             "{}: {} wanted to tell you on {} UTC: {}",
@@ -177,20 +177,11 @@ fn send_tells(srv: &IrcServer, log: &Logger, tells: &[models::PendingTell]) {
             t.date,
             t.message
         );
-        let res = if t.channel.is_some() {
-            srv.send_notice(t.channel.as_ref().unwrap(), &msg)
-        } else {
-            srv.send_privmsg(&t.target_nick, &msg)
-        };
-
-        if let Err(e) = res {
-            // Don't crash the thread because other send may succeed
-            warn!(log, "Failed to send message to {}: {}", t.target_nick, e);
-        }
+        super::send_segmented_message(cfg, srv, log, &t.target_nick, &msg, t.channel.is_none());
     }
 }
 
-pub fn add(cfg: &ServerCfg, log: &Logger, private: bool, msg: &Message) -> String {
+pub fn add(cfg: &ServerCfg, log: &Logger, msg: &Message, private: bool) -> String {
     if let Command::PRIVMSG(ref target, ref content) = msg.command {
         let source_nick = msg.source_nickname().unwrap();
 
@@ -199,8 +190,8 @@ pub fn add(cfg: &ServerCfg, log: &Logger, private: bool, msg: &Message) -> Strin
         let target_msg = if let Some(s) = split.next() {
             s
         } else {
-            debug!(log, "invalid tell: {:?}", msg);
-            return "Invalid `.tell` syntax, try: `.tell nick a neat message`".into();
+            trace!(log, "invalid tell: {:?}", msg);
+            return "Invalid `.tell` syntax, try: `.tell <nick> <message>`".into();
         };
 
         let date = &Utc::now().to_rfc2822()[..26];

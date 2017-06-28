@@ -31,6 +31,7 @@ pub struct Config {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ServerCfg {
+    pub address: String,
     pub nickname: String,
     #[serde(rename = "alternative_nicknames")]
     pub alt_nicknames: Option<Vec<String>>,
@@ -38,7 +39,8 @@ pub struct ServerCfg {
     pub nick_password: String,
     pub server_password: Option<String>,
     pub database: String,
-    pub address: String,
+    #[serde(rename = "weather_api_secret")]
+    pub weather_secret: Option<String>,
     pub port: u16,
     #[serde(rename = "channel")]
     pub channels: Vec<ChannelCfg>,
@@ -98,10 +100,30 @@ impl<'a> From<&'a ServerCfg> for IrcServer {
 
 pub fn parse_config(input: &str) -> Config {
     let de = de::from_str(input);
-    if de.is_err() {
+    // Why does the type not get inferred
+    let ret: Config = if de.is_err() {
         crit!(::SLOG_ROOT, "Failed to parse config file: {:?}", de);
         panic!("Failed to parse config file: {:?}", de)
     } else {
         de.unwrap()
+    };
+    for srv in &ret.servers {
+        if srv.weather_secret.is_none() &&
+            srv.channels
+                .iter()
+                .any(|c| c.modules.iter().any(|m| m == "weather"))
+        {
+            crit!(
+                ::SLOG_ROOT,
+                "Weather modules enabled on {:?}, but no weather API secret given",
+                &srv.address
+            );
+            panic!(
+                "Weather modules enabled on {:?}, but no weather API secret given",
+                &srv.address
+            );
+        }
     }
+
+    ret
 }

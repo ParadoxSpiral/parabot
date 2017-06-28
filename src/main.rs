@@ -23,10 +23,11 @@ extern crate crossbeam;
 extern crate hyper;
 extern crate irc;
 extern crate parking_lot;
+extern crate regex;
 extern crate serde;
-extern crate threadpool;
 extern crate slog_async;
 extern crate slog_term;
+extern crate threadpool;
 extern crate toml;
 extern crate unicode_segmentation;
 
@@ -119,7 +120,7 @@ fn main() {
         state.push((Arc::new(cfg), srv, log));
     }
     crossbeam::scope(move |scope| for &(ref cfg, ref srv, ref log) in &state {
-    	// TODO: Is there a way to do less cloning?
+        // TODO: Is there a way to do less cloning?
         let pool = pool.clone();
         let cfg = cfg.clone();
         let srv1 = srv.clone();

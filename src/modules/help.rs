@@ -20,8 +20,8 @@ use config::ServerCfg;
 pub fn handle(cfg: &ServerCfg, target: &str, msg: &str, private: bool) -> String {
     if &msg[1..] == "help" {
         if private {
-            "Hi! For more information, use .help <module>. This is a private \
-             message, so I cannot tell you about any channel's enabled modules."
+            "Hi! For more information, use .help <module>. In private (i.e. non channel mode) \
+             you can use these modules: `tell`, `weather`, `wolfram-alpha`."
                 .to_owned()
         } else {
             format!(
@@ -47,8 +47,11 @@ pub fn handle(cfg: &ServerCfg, target: &str, msg: &str, private: bool) -> String
                     .to_owned()
             }
             "weather" | ".weather" => {
-                unimplemented!();
-                ".weather . (Powered by Dark Sky)".to_owned()
+                "`.weather [[+]n<d|h| days| hours>] <location>` will show weather information \
+                 powered by Dark Sky. If you specify `n` and `<days>` or `<d>` xor `<hours>` or \
+                 `<h>`, data for the next n `<d|h>` will be replied with. Adding a `+` will gather \
+                 data for current-time+`n<d|h>`. Data is available for the next 48h, or 7d."
+                    .to_owned()
             }
             "wa" | ".wa" => {
                 unimplemented!();
