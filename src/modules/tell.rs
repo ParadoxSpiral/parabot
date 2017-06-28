@@ -91,14 +91,14 @@ pub fn handle_join(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message
             ).execute(&conn)
             {
                 crit!(log, "Failed to delete tells: {:?}", e);
-                    let res = srv.send_privmsg(
-                        &target_nick,
-                        "You have some pending tells, but I failed \
-                         at a step. Try rejoining, or notifying the admin.",
-                    );
-                    if let Err(e) = res {
-                        crit!(log, "Failed to send message to {}: {}", &target_nick, e);
-                    }
+                let res = srv.send_privmsg(
+                    target_nick,
+                    "You have some pending tells, but I failed \
+                     at a step. Try rejoining, or notifying the admin.",
+                );
+                if let Err(e) = res {
+                    crit!(log, "Failed to send message to {}: {}", &target_nick, e);
+                }
             }
 
             send_tells(srv, log, &tells);
@@ -120,7 +120,8 @@ pub fn handle_reply(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Messag
                 .unwrap()
                 .split(' ')
                 .filter(|u| u != &cfg.nickname)
-                .map(|u| u.replace('@', "").replace('+', "")).collect::<Vec<_>>();
+                .map(|u| u.replace('@', "").replace('+', ""))
+                .collect::<Vec<_>>();
 
             let conn = establish_connection(cfg, log);
             let tells = dsl::pending_tells
@@ -177,7 +178,7 @@ fn send_tells(srv: &IrcServer, log: &Logger, tells: &[models::PendingTell]) {
             t.message
         );
         let res = if t.channel.is_some() {
-            srv.send_notice(&t.channel.as_ref().unwrap(), &msg)
+            srv.send_notice(t.channel.as_ref().unwrap(), &msg)
         } else {
             srv.send_privmsg(&t.target_nick, &msg)
         };

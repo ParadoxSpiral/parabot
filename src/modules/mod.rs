@@ -26,6 +26,7 @@ use std::collections::HashMap;
 
 use super::config::{Config, ServerCfg};
 
+mod help;
 mod tell;
 
 const COMMAND_MODIFIER: char = '.';
@@ -74,7 +75,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
             HOSTNAMES
                 .write()
                 .entry(cfg.address.clone())
-                .or_insert_with(||msg.prefix.as_ref().unwrap().clone());
+                .or_insert_with(|| msg.prefix.as_ref().unwrap().clone());
         }
         Command::Raw(ref s, ..) if s == "250" || s == "265" || s == "266" => {
             trace!(log, "{:?}", msg)
@@ -99,26 +100,26 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
             // Test if this msg was sent to a channel. When replying,
             // we want to use NOTICE in that case
             let first_char = target.chars().nth(0).unwrap();
-            let chan_msg = CHANNEL_PREFIXES.iter().any(|p| &first_char == p);
+            let private = !CHANNEL_PREFIXES.iter().any(|p| &first_char == p);
             let priv_or_notice = |to_send: &str| {
-                if let Err(e) = if chan_msg {
-                    srv.send_notice(target, to_send)
-                } else {
+                if let Err(e) = if private {
                     srv.send_privmsg(msg.source_nickname().unwrap(), to_send)
+                } else {
+                    srv.send_notice(target, to_send)
                 } {
                     crit!(
                         log,
                         "Failed to send message to {}: {:?}",
-                        if chan_msg {
-                            target
-                        } else {
+                        if private {
                             msg.source_nickname().unwrap()
+                        } else {
+                            target
                         },
                         e
                     )
                 };
             };
-            trace!(log, "in channel: {}", chan_msg);
+            trace!(log, "private: {}", private);
 
             // Check if msg is a command, handle command/context modules
             if content.chars().nth(0).unwrap() == COMMAND_MODIFIER {
@@ -126,71 +127,24 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
                     trace!(log, "Replying to .bots");
                     priv_or_notice("Beep boop, I'm a bot!");
                 } else if content[1..].starts_with("help") {
-                    let reply = if &content[1..] == "help" {
-                        trace!(log, "Replying to .help");
-                        if chan_msg {
-                            format!(
-                                "Hi! For more information, use .help <module>. \
-                                 Enabled modules: {:?}",
-                                cfg.channels
-                                    .iter()
-                                    .find(|c| *c.name == *target)
-                                    .unwrap()
-                                    .modules
-                                    .as_slice()
-                            )
-                        } else {
-                            "Hi! For more information, use .help <module>. This is a private \
-                             message, so I cannot tell you about any channel's enabled modules."
-                                .to_owned()
-                        }
-                    } else {
-                        // Starts with help, e.g. more args
-                        match &content[6..] {
-                            "bots" | ".bots" => {
-                                ".bots will (hopefully) cause all bots in the channel to reply."
-                                    .to_owned()
-                            }
-                            "tell" | ".tell" => {
-                                ".tell <nick> <message> will tell the user with <nick> <message>, \
-                                 when they join a channel shared with me."
-                                    .to_owned()
-                            }
-                            "weather" | ".weather" => {
-                                unimplemented!();
-                                ".weather . (Powered by Dark Sky)".to_owned()
-                            }
-                            "wa" | ".wa" => {
-                            	unimplemented!();
-                                ".wa <query> will query wolfram-alpha about <query>.".to_owned()
-                            }
-                            "url" => {
-                            	unimplemented!();
-                                "url fetches urls posted in the channel, and displays their \
-                                 metadata, and depending on the website, \
-                                 more e.g. youtube views."
-                                    .to_owned()
-                            }
-                            _ => "Unknown or undocumented module, sorry.".to_owned(),
-                        }
-                    };
+                    trace!(log, "Replying to .help");
                     send_segmented_message(
                         cfg,
                         srv,
                         log,
-                        if chan_msg {
-                            target
-                        } else {
+                        if private {
                             msg.source_nickname().unwrap()
+                        } else {
+                            target
                         },
-                        &reply,
-                        !chan_msg,
+                        &help::handle(cfg, &*target, content, private),
+                        private,
                     );
-                } else if (!chan_msg || module_enabled_channel(cfg, &*target, "tell")) &&
+                } else if (private || module_enabled_channel(cfg, &*target, "tell")) &&
                            content[1..].starts_with("tell")
                 {
                     trace!(log, "Starting .tell");
-                    priv_or_notice(&tell::add(cfg, log, !chan_msg, &msg));
+                    priv_or_notice(&tell::add(cfg, log, private, &msg));
                 } else {
                     warn!(log, "Unknown command {}", &content[1..]);
                 }
