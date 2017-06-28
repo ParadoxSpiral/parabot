@@ -47,11 +47,10 @@ pub fn handle(cfg: &ServerCfg, target: &str, msg: &str, private: bool) -> String
                     .to_owned()
             }
             "weather" | ".weather" => {
-                unimplemented!();
-                ".weather [[+]n <days|hours>] <location> will show weather information \
-                 powered by Dark Sky. If you specify n and either <days> or <hours>, data for \
-                 the next n <days|hours> will be replied with, adding a + will gather data \
-                 for current-time+n <days|hours>."
+                "`.weather [[+]n<d|h| days| hours>] <location>` will show weather information \
+                 powered by Dark Sky. If you specify `n` and `<days>` or `<d>` xor `<hours>` or \
+                 `<h>`, data for the next n `<d|h>` will be replied with. Adding a `+` will gather \
+                 data for current-time+`n<d|h>`. Data is available for the next 48h, or 7d."
                     .to_owned()
             }
             "wa" | ".wa" => {

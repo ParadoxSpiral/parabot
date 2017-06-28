@@ -23,10 +23,11 @@ extern crate crossbeam;
 extern crate hyper;
 extern crate irc;
 extern crate parking_lot;
+extern crate regex;
 extern crate serde;
-extern crate threadpool;
 extern crate slog_async;
 extern crate slog_term;
+extern crate threadpool;
 extern crate toml;
 extern crate unicode_segmentation;
 
