@@ -1,10 +1,11 @@
 [[server]]
+address = "irc.rizon.net"
 nickname = "parabot"
 #optional: alternative_nicknames = ["weebot"]
 nickserv_password = "test123"
 # optional: server_password = "test123"
 database = "parabot_empty.db" # Needs actual URL, different servers may populate the same db
-address = "irc.rizon.net"
+# optional: weather_api_secret = "secret" a https://darksky.net API secret
 port = 6697
 	[[server.channel]]
 	name = "#c"
@@ -15,9 +16,9 @@ port = 6697
 	modules = ["url", "weather"]
 
 [[server]]
+address = "irc.freenode.net"
 nickname = "parabot"
 nickserv_password = "test123"
-address = "irc.freenode.net"
 port = 6697
 	[[server.channel]]
 	name = "##rust"

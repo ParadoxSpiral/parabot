@@ -15,8 +15,17 @@
 // You should have received a copy of the GNU General Public License
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
+use hyper::client;
+use irc::client::prelude::*;
+use slog::Logger;
+
 use config::ServerCfg;
 
-pub fn handle(cfg: &ServerCfg, target: &str, msg: &str, private: bool) -> String {
-    unimplemented!()
+pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> String {
+    if let Command::PRIVMSG(ref target, ref content) = msg.command {
+
+        unimplemented!()
+    } else {
+        unreachable!()
+    }
 }

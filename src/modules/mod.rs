@@ -87,13 +87,13 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
                 // We don't check if the module is enabled, because it's our responsibility to
                 // deliver the msg asap without fail, even if the bot owner disabled the module;
                 // If they *really* want, they can clean the database
-                tell::handle_join(cfg, srv, log, &msg);
+                tell::handle_user_join(cfg, srv, log, &msg);
             }
         }
         Command::Response(Response::RPL_NAMREPLY, ..) => {
             // The bot joined a channel, and asked for nicknames to see if they have any
             // pending tells. (NOTE: something, maybe the irc crate, asks automatically)
-            tell::handle_reply(cfg, srv, log, &msg);
+            tell::handle_names_reply(cfg, srv, log, &msg);
         }
         Command::PRIVMSG(ref target, ref content) => {
             debug!(log, "PRIVMSG to {}: {}", target, content);
@@ -102,31 +102,15 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
             // we want to use NOTICE in that case
             let first_char = target.chars().nth(0).unwrap();
             let private = !CHANNEL_PREFIXES.iter().any(|p| &first_char == p);
-            let priv_or_notice = |to_send: &str| {
-                if let Err(e) = if private {
-                    srv.send_privmsg(msg.source_nickname().unwrap(), to_send)
-                } else {
-                    srv.send_notice(target, to_send)
-                } {
-                    crit!(
-                        log,
-                        "Failed to send message to {}: {:?}",
-                        if private {
-                            msg.source_nickname().unwrap()
-                        } else {
-                            target
-                        },
-                        e
-                    )
-                };
-            };
             trace!(log, "private: {}", private);
 
             // Check if msg is a command, handle command/context modules
             if content.chars().nth(0).unwrap() == COMMAND_MODIFIER {
                 if &content[1..] == "bots" {
                     trace!(log, "Replying to .bots");
-                    priv_or_notice("Beep boop, I'm a bot!");
+                    let reply_target = get_reply_target(&msg, private);
+                    let reply = "Beep boop, I'm a bot!";
+                    send_segmented_message(cfg, srv, log, reply_target, reply, private);
                 } else if content[1..].starts_with("help") {
                     trace!(log, "Replying to .help");
                     let reply_target = get_reply_target(&msg, private);
@@ -144,7 +128,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
                 {
                     trace!(log, "Starting .weather");
                     let reply_target = get_reply_target(&msg, private);
-                    let reply = weather::handle(cfg, &*target, content, private);
+                    let reply = weather::handle(cfg, srv, log, &msg);
                     send_segmented_message(cfg, srv, log, reply_target, &reply, private);
                 } else {
                     warn!(log, "Unknown command {}", &content[1..]);
