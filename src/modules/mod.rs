@@ -15,8 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
-// TODO: Possibly switch to clap for msg parsing
-
+use diesel::Connection;
+use diesel::sqlite::SqliteConnection;
 use irc::client::prelude::*;
 use parking_lot::RwLock;
 use slog::Logger;
@@ -24,15 +24,14 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use std::collections::HashMap;
 
-use super::config::{Config, ServerCfg};
+use config::{Config, ServerCfg};
 
 mod help;
 mod tell;
 mod weather;
+mod weather_utils;
 
 const COMMAND_MODIFIER: char = '.';
-// https://tools.ietf.org/html/rfc2812#section-1.3
-const CHANNEL_PREFIXES: &[char] = &['#', '&', '+', '!'];
 // TODO: I'm not sure what the actual limit is, I read that the server may add crap to your msg,
 // so there's 30 bytes for that
 const MESSAGE_BYTES_LIMIT: usize = 482;
@@ -45,6 +44,7 @@ lazy_static!{
 
 pub fn init(cfg: &Config, log: &Logger) {
     tell::init(cfg, log);
+    weather::init(cfg, log);
 }
 
 #[allow(needless_pass_by_value)]
@@ -98,37 +98,33 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
         Command::PRIVMSG(ref target, ref content) => {
             debug!(log, "PRIVMSG to {}: {}", target, content);
 
-            // Test if this msg was sent to a channel. When replying,
-            // we want to use NOTICE in that case
-            let first_char = target.chars().nth(0).unwrap();
-            let private = !CHANNEL_PREFIXES.iter().any(|p| &first_char == p);
+            let reply_target = msg.response_target().unwrap();
+            // Test if this msg was sent to a channel. When replying, we want to use NOTICE
+            let private = !(target == reply_target);
             trace!(log, "private: {}", private);
 
             // Check if msg is a command, handle command/context modules
             if content.chars().nth(0).unwrap() == COMMAND_MODIFIER {
                 if &content[1..] == "bots" {
                     trace!(log, "Replying to .bots");
-                    let reply_target = get_reply_target(&msg, private);
                     let reply = "Beep boop, I'm a bot!";
                     send_segmented_message(cfg, srv, log, reply_target, reply, private);
                 } else if content[1..].starts_with("help") {
                     trace!(log, "Replying to .help");
-                    let reply_target = get_reply_target(&msg, private);
                     let reply = help::handle(cfg, &*target, content, private);
                     send_segmented_message(cfg, srv, log, reply_target, &reply, private);
                 } else if (private || module_enabled_channel(cfg, &*target, "tell")) &&
                            content[1..].starts_with("tell")
                 {
                     trace!(log, "Starting .tell");
-                    let reply_target = get_reply_target(&msg, private);
                     let reply = tell::add(cfg, log, &msg, private);
                     send_segmented_message(cfg, srv, log, reply_target, &reply, private);
                 } else if (private || module_enabled_channel(cfg, &*target, "weather")) &&
                            content[1..].starts_with("weather")
                 {
                     trace!(log, "Starting .weather");
-                    let reply_target = get_reply_target(&msg, private);
-                    let reply = weather::handle(cfg, srv, log, &content[9..]);
+                    let nick = msg.source_nickname().unwrap();
+                    let reply = weather::handle(cfg, srv, log, &content[9..], nick);
                     send_segmented_message(cfg, srv, log, reply_target, &reply, private);
                 } else {
                     warn!(log, "Unknown command {}", &content[1..]);
@@ -147,19 +143,6 @@ fn module_enabled_channel(cfg: &ServerCfg, target: &str, module: &str) -> bool {
     cfg.channels.iter().any(|c| {
         c.name == target && c.modules.iter().any(|m| m == module)
     })
-}
-
-fn get_reply_target(msg: &Message, private: bool) -> &str {
-    // Expand to other commands if needed
-    if let Command::PRIVMSG(ref target, ..) = msg.command {
-        if private {
-            msg.source_nickname().unwrap()
-        } else {
-            target
-        }
-    } else {
-        unreachable!()
-    }
 }
 
 fn send_segmented_message(
@@ -207,5 +190,26 @@ fn send_segmented_message(
         if !msg.is_empty() {
             send_err(&msg);
         }
+    }
+}
+
+fn establish_database_connection(cfg: &ServerCfg, log: &Logger) -> SqliteConnection {
+    let ret = SqliteConnection::establish(&cfg.database);
+    if ret.is_err() {
+        crit!(
+            log,
+            "Failed to connect to database {}: {}",
+            cfg.database,
+            // The T does not impl Debug, so no .unwrap_err
+            if let Err(e) = ret { e } else { unreachable!() }
+        );
+        panic!("")
+    } else {
+        trace!(
+            log,
+            "Successfully established connection to {}",
+            cfg.database
+        );
+        ret.unwrap()
     }
 }

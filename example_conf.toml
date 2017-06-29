@@ -6,6 +6,8 @@ nickserv_password = "test123"
 # optional: server_password = "test123"
 database = "parabot_empty.db" # Needs actual URL, different servers may populate the same db
 # optional: weather_api_secret = "secret" a https://darksky.net API secret
+# optional: max_burst_messages = 4
+# optional: burst_window_length = 8 # Time between bursts in seconds
 port = 6697
 	[[server.channel]]
 	name = "#c"

@@ -37,3 +37,18 @@ pub struct NewPendingTell<'a> {
     pub target_nick: &'a str,
     pub message: &'a str,
 }
+
+#[derive(Debug, Queryable)]
+pub struct LastWeatherSearch {
+    pub server: String,
+    pub nick: String,
+    pub location: String,
+}
+
+#[derive(Debug, Insertable)]
+#[table_name = "last_weather_search"]
+pub struct NewLastWeatherSearch<'a> {
+    pub server: &'a str,
+    pub nick: &'a str,
+    pub location: &'a str,
+}

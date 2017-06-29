@@ -32,6 +32,7 @@ pub struct Config {
 #[serde(deny_unknown_fields)]
 pub struct ServerCfg {
     pub address: String,
+    pub port: u16,
     pub nickname: String,
     #[serde(rename = "alternative_nicknames")]
     pub alt_nicknames: Option<Vec<String>>,
@@ -41,7 +42,8 @@ pub struct ServerCfg {
     pub database: String,
     #[serde(rename = "weather_api_secret")]
     pub weather_secret: Option<String>,
-    pub port: u16,
+    pub max_burst_messages: Option<u32>,
+    pub burst_window_length: Option<u32>,
     #[serde(rename = "channel")]
     pub channels: Vec<ChannelCfg>,
 }
@@ -54,6 +56,7 @@ pub struct ChannelCfg {
     pub modules: Vec<String>,
 }
 
+// This unidiomatically does not use TryFrom, because of the way we do error handling
 impl<'a> From<&'a ServerCfg> for IrcServer {
     fn from(srv: &'a ServerCfg) -> IrcServer {
         let srv = IrcServer::from_config(IrcConfig {
@@ -79,6 +82,8 @@ impl<'a> From<&'a ServerCfg> for IrcServer {
                     Some(hm)
                 }
             },
+            max_messages_in_burst: srv.max_burst_messages.clone(),
+            burst_window_length: srv.burst_window_length.clone(),
             should_ghost: Some(true),
             version: Some(format!(
                 "Parabot {} brought to you by {}",
