@@ -22,6 +22,127 @@ use slog::Logger;
 
 use config::ServerCfg;
 
+// https://darksky.net/dev/docs/response
+#[derive(Deserialize)]
+struct ForecastResponse<'a> {
+	latitude: f32,
+	longtitude: f32,
+	timezone: &'a str,
+	currently: Option<DataPoint<'a>>,
+	minutely: Option<DataBlock<'a>>,
+	hourly: Option<DataBlock<'a>>,
+	daily: Option<DataBlock<'a>>,
+	alerts: Option<&'a [Alert]>,
+	flags: Option<Flags<'a>>,
+}
+
+// https://darksky.net/dev/docs/response#data-block
+#[derive(Deserialize)]
+struct DataBlock<'a> {
+	data: &'a [DataPoint<'a>],
+	summary: Option<&'a str>,
+	icon: Option<&'a str>
+}
+
+// https://darksky.net/dev/docs/response#data-point
+#[derive(Deserialize)]
+struct DataPoint<'a> {
+	#[serde( rename = "apparentTemperature")]
+	apparent_temperature: Option<f32>,
+	#[serde( rename = "apparentTemperatureMax")]
+	apparent_temperature_max: Option<f32>,
+	#[serde( rename = "apparentTemperatureMaxTime")]
+	apparent_temperature_max_mime: Option<i64>,
+	#[serde( rename = "apparentTemperatureMin")]
+	apparent_temperature_min: Option<f32>,
+	#[serde( rename = "apparentTemperatureMinTime")]
+	apparent_temperature_min_time: Option<i64>,
+	#[serde( rename = "cloudCover")]
+	cloud_cover: Option<f32>,
+	#[serde( rename = "dewPoint")]
+	dew_point: Option<f32>,
+	humidity: Option<f32>,
+	icon: Option<&'a str>,
+	#[serde( rename = "moonPhase")]
+	moon_phase: Option<f32>,
+	#[serde( rename = "nearestStormBearing")]
+	nearest_storm_bearing: Option<f32>,
+	#[serde( rename = "nearestStormDistance")]
+	nearest_storm_distance: Option<usize>,
+	ozone: Option<f32>,
+	#[serde( rename = "precipAccumulation")]
+	precip_accumulation: Option<usize>,
+	#[serde( rename = "precipIntensity")]
+	precip_intensity: Option<usize>,
+	#[serde( rename = "precipIntensityMax")]
+	precip_intensity_max: Option<usize>,
+	#[serde( rename = "precipIntensityMaxTime")]
+	precip_intensity_max_time: Option<i64>,	
+	#[serde( rename = "precipProbability")]
+	precip_probability: Option<f32>,
+	#[serde( rename = "precipType")]
+	precip_type: Option<PrecipType>,
+	pressure: Option<f32>,
+	summary: Option<&'a str>,
+	#[serde( rename = "sunriseTime")]
+	sunrise_time: Option<i64>,
+	#[serde( rename = "sunsetTime")]
+	sunset_time: Option<i64>,
+	temperature: Option<f32>,
+	#[serde( rename = "temperatureMax")]
+	temperature_max: Option<f32>,
+	#[serde( rename = "temperatureMaxTime")]
+	temperature_max_time: Option<i64>,
+	#[serde( rename = "temperatureMin")]
+	temperature_min: Option<f32>,
+	#[serde( rename = "temperatureMinTime")]
+	temperature_min_time: Option<i64>,
+	time: Option<i64>,
+	// TODO: Is this one correct?
+	#[serde( rename = "uvIndex")]
+	uv_index: Option<usize>,
+	#[serde( rename = "uvIndexTime")]
+	uv_index_time: Option<i64>,
+	visibility: Option<f32>,
+	#[serde( rename = "windBearing")]
+	wind_bearing: Option<f32>,
+	#[serde( rename = "windGust")]
+	wind_gust: Option<f32>,
+	#[serde( rename = "windGustTime")]
+	wind_gust_time: Option<i64>,
+	#[serde( rename = "windSpeed")]
+	wind_speed: Option<f32>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum PrecipType {Rain, Snow, Sleet}
+
+// https://darksky.net/dev/docs/response#alerts
+#[derive(Deserialize)]
+struct Alert<'a> {
+	description: &'a str,
+	expires: Option<i64>,
+	regions: &'a [&'a str],
+	severity: AlertSeverity,
+	time: i64,
+	title: &'a str,
+	uri: &'a str,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum AlertSeverity {Advisory, Watch, Warning}
+
+// https://darksky.net/dev/docs/response#flags
+#[derive(Deserialize)]
+struct Flags<'a> {
+	#[serde(rename = "darksky-unavailable")]
+	darksky_unavailable: Option<&'a str>,
+	sources: &'a [&'a str],
+	units: &'a str,
+}
+
 pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str) -> String {
     // Only compile the regex once
     lazy_static! {
@@ -52,14 +173,13 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str) -> Stri
             captures.name("digits"),
             captures.name("h").is_some() || captures.name("hours").is_some(),
             captures.name("d").is_some() || captures.name("days").is_some(),
-            captures.name("location"),
+            if let Some(loc) = captures.name("location") {
+                loc
+            } else {
+                debug!(log, "No location found");
+                return "Invalid `.weather` syntax, try: `.help weather`".into();
+            },
         )
-    };
-    let location = if location.is_none() {
-        debug!(log, "No location found");
-        return "Invalid `.weather` syntax, try: `.help weather`".into();
-    } else {
-        location.unwrap()
     };
 
     unimplemented!()
