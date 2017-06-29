@@ -32,6 +32,7 @@ pub struct Config {
 #[serde(deny_unknown_fields)]
 pub struct ServerCfg {
     pub address: String,
+    pub port: u16,
     pub nickname: String,
     #[serde(rename = "alternative_nicknames")]
     pub alt_nicknames: Option<Vec<String>>,
@@ -41,7 +42,10 @@ pub struct ServerCfg {
     pub database: String,
     #[serde(rename = "weather_api_secret")]
     pub weather_secret: Option<String>,
-    pub port: u16,
+    #[serde(rename = "geocoding_api_key")]
+    pub geocoding_key: Option<String>,
+    pub max_burst_messages: Option<u32>,
+    pub burst_window_length: Option<u32>,
     #[serde(rename = "channel")]
     pub channels: Vec<ChannelCfg>,
 }
@@ -51,9 +55,11 @@ pub struct ServerCfg {
 pub struct ChannelCfg {
     pub name: String,
     pub password: Option<String>,
+    pub weather_format: Option<String>,
     pub modules: Vec<String>,
 }
 
+// This unidiomatically does not use TryFrom, because of the way we do error handling
 impl<'a> From<&'a ServerCfg> for IrcServer {
     fn from(srv: &'a ServerCfg) -> IrcServer {
         let srv = IrcServer::from_config(IrcConfig {
@@ -79,6 +85,9 @@ impl<'a> From<&'a ServerCfg> for IrcServer {
                     Some(hm)
                 }
             },
+            max_messages_in_burst: srv.max_burst_messages.clone(),
+            burst_window_length: srv.burst_window_length.clone(),
+            encoding: Some("UTF-8".to_owned()),
             should_ghost: Some(true),
             version: Some(format!(
                 "Parabot {} brought to you by {}",
@@ -108,18 +117,18 @@ pub fn parse_config(input: &str) -> Config {
         de.unwrap()
     };
     for srv in &ret.servers {
-        if srv.weather_secret.is_none() &&
+        if (srv.weather_secret.is_none() || srv.geocoding_key.is_none()) &&
             srv.channels
                 .iter()
                 .any(|c| c.modules.iter().any(|m| m == "weather"))
         {
             crit!(
                 ::SLOG_ROOT,
-                "Weather modules enabled on {:?}, but no weather API secret given",
+                "Weather modules enabled on {:?}, but no weather API secret or geocoding key given",
                 &srv.address
             );
             panic!(
-                "Weather modules enabled on {:?}, but no weather API secret given",
+                "Weather modules enabled on {:?}, but no weather API secret or geocoding key given",
                 &srv.address
             );
         }

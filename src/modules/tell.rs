@@ -18,7 +18,6 @@
 use chrono::Utc;
 use diesel;
 use diesel::prelude::*;
-use diesel::sqlite::SqliteConnection;
 use irc::client::prelude::*;
 use parking_lot::Mutex;
 use slog::Logger;
@@ -40,7 +39,7 @@ lazy_static!{
 pub fn init(cfg: &Config, log: &Logger) {
     let mut hm = PENDING_TELLS_HM.lock();
     for srv in &cfg.servers {
-        let conn = establish_connection(srv, log);
+        let conn = super::establish_database_connection(srv, log);
         let tells = dsl::pending_tells
             .filter(dsl::server_addr.eq(&srv.address))
             .load::<models::PendingTell>(&conn);
@@ -66,7 +65,7 @@ pub fn handle_user_join(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Me
         if let Command::JOIN(ref chan, ..) = msg.command {
             let target_nick = msg.source_nickname().unwrap();
 
-            let conn = establish_connection(cfg, log);
+            let conn = super::establish_database_connection(cfg, log);
             let tells = dsl::pending_tells
                 .filter(dsl::server_addr.eq(&cfg.address))
                 .filter(dsl::target_nick.eq(&target_nick))
@@ -123,7 +122,7 @@ pub fn handle_names_reply(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &
                 .map(|u| u.replace('@', "").replace('+', ""))
                 .collect::<Vec<_>>();
 
-            let conn = establish_connection(cfg, log);
+            let conn = super::establish_database_connection(cfg, log);
             let tells = dsl::pending_tells
                 .filter(dsl::server_addr.eq(&cfg.address))
                 .filter(dsl::target_nick.eq_any(&target_nicks))
@@ -193,7 +192,7 @@ pub fn add(cfg: &ServerCfg, log: &Logger, msg: &Message, private: bool) -> Strin
             return "Invalid `.tell` syntax, try: `.tell <nick> <message>`".into();
         };
 
-        let date = &Utc::now().to_rfc2822()[..26];
+        let date = &Utc::now().to_rfc2822()[..25];
         let pending_tell = models::NewPendingTell {
             date: date,
             server_addr: &cfg.address,
@@ -203,7 +202,7 @@ pub fn add(cfg: &ServerCfg, log: &Logger, msg: &Message, private: bool) -> Strin
             message: target_msg,
         };
 
-        let conn = establish_connection(cfg, log);
+        let conn = super::establish_database_connection(cfg, log);
         let res = diesel::insert(&pending_tell)
             .into(schema::pending_tells::table)
             .execute(&conn);
@@ -228,26 +227,5 @@ pub fn add(cfg: &ServerCfg, log: &Logger, msg: &Message, private: bool) -> Strin
         }
     } else {
         unreachable!()
-    }
-}
-
-pub fn establish_connection(cfg: &ServerCfg, log: &Logger) -> SqliteConnection {
-    let ret = SqliteConnection::establish(&cfg.database);
-    if ret.is_err() {
-        crit!(
-            log,
-            "Failed to connect to database {}: {}",
-            cfg.database,
-            // The T does not impl Debug, so no .unwrap_err
-            if let Err(e) = ret { e } else { unreachable!() }
-        );
-        panic!("")
-    } else {
-        trace!(
-            log,
-            "Successfully established connection to {}",
-            cfg.database
-        );
-        ret.unwrap()
     }
 }
