@@ -29,7 +29,6 @@ use config::{Config, ServerCfg};
 mod help;
 mod tell;
 mod weather;
-mod weather_utils;
 
 const COMMAND_MODIFIER: char = '.';
 // TODO: I'm not sure what the actual limit is, I read that the server may add crap to your msg,
@@ -103,7 +102,6 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
             let reply_target = msg.response_target().unwrap();
             // Test if this msg was sent to a channel. When replying, we want to use NOTICE
             let private = !(target == reply_target);
-            trace!(log, "private: {}", private);
 
             // Check if msg is a command, handle command/context modules
             if content.chars().nth(0).unwrap() == COMMAND_MODIFIER {
@@ -126,7 +124,8 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
                 {
                     trace!(log, "Starting .weather");
                     let nick = msg.source_nickname().unwrap();
-                    let reply = weather::handle(cfg, srv, log, &content[9..], nick);
+                    let chan_cfg = cfg.channels.iter().find(|c| &c.name == target);
+                    let reply = weather::handle(cfg, chan_cfg, srv, log, &content[9..], nick);
                     send_segmented_message(cfg, srv, log, reply_target, &reply, private);
                 } else {
                     warn!(log, "Unknown command {}", &content[1..]);

@@ -192,7 +192,7 @@ pub fn add(cfg: &ServerCfg, log: &Logger, msg: &Message, private: bool) -> Strin
             return "Invalid `.tell` syntax, try: `.tell <nick> <message>`".into();
         };
 
-        let date = &Utc::now().to_rfc2822()[..26];
+        let date = &Utc::now().to_rfc2822()[..25];
         let pending_tell = models::NewPendingTell {
             date: date,
             server_addr: &cfg.address,

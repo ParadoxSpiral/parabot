@@ -17,19 +17,24 @@
 
 use diesel;
 use diesel::prelude::*;
-use hyper::client;
+use forecast::{ApiResponse, ApiClient, ForecastRequestBuilder, ExcludeBlock, ExtendBy, Units};
 use irc::client::prelude::*;
 use parking_lot::RwLock;
 use regex::Regex;
+use reqwest::Client;
+use serde_json::de;
+use serde_json::Value;
 use slog::Logger;
 
 use std::collections::HashMap;
+use std::io::Read;
 
-use config::{Config, ServerCfg};
+use config::{ChannelCfg, Config, ServerCfg};
 use models;
 use schema;
 use schema::last_weather_search::dsl;
-use super::weather_utils::*;
+
+const GEOCODING_API_BASE: &str = "http://www.mapquestapi.com/geocoding/v1/address";
 
 lazy_static!{
     static ref LAST_WEATHER_CACHE: RwLock<HashMap<(String, String), String>> = {
@@ -69,12 +74,22 @@ pub fn init(cfg: &Config, log: &Logger) {
     }
 }
 
-pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &str) -> String {
+pub fn handle(
+    cfg: &ServerCfg,
+    chan_cfg: Option<&ChannelCfg>,
+    srv: &IrcServer,
+    log: &Logger,
+    msg: &str,
+    nick: &str,
+) -> String {
     let (future, n, hours, days, location) = {
         // Use last location
         if msg.is_empty() {
             (false, None, false, false, {
-                if let Some(loc) = LAST_WEATHER_CACHE.read().get(&(cfg.address.clone(), nick.to_owned())) {
+                if let Some(loc) = LAST_WEATHER_CACHE
+                    .read()
+                    .get(&(cfg.address.clone(), nick.to_owned()))
+                {
                     loc.clone()
                 } else {
                     return "You have never used `.weather` before, try `.help weather`".into();
@@ -116,10 +131,13 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
                     let new_loc = loc.as_str().to_owned();
                     // Potentially update the cache and DB
                     let mut cache = LAST_WEATHER_CACHE.write();
-                    if let Some(old_loc) = cache.get(&(cfg.address.clone(), nick.to_owned())).cloned() {
+                    if let Some(old_loc) = cache
+                        .get(&(cfg.address.clone(), nick.to_owned()))
+                        .cloned()
+                    {
                         // Only update if the location actually changed
-                        if &*old_loc != &*new_loc {
-                        	trace!(log, "Updating Cache/DB");
+                        if old_loc != new_loc {
+                            trace!(log, "Updating Cache/DB");
                             cache.remove(&(cfg.address.clone(), nick.to_owned()));
                             cache.insert((cfg.address.clone(), nick.to_owned()), new_loc.clone());
                             drop(cache);
@@ -138,7 +156,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
                             trace!(log, "No update needed")
                         }
                     } else {
-                    	trace!(log, "Inserting into Cache/DB");
+                        trace!(log, "Inserting into Cache/DB");
                         cache.insert((cfg.address.clone(), nick.to_owned()), new_loc.clone());
                         drop(cache);
 
@@ -164,5 +182,65 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
         }
     };
 
+    // Search for geocoding for location
+    let reqwest_client = Client::new();
+    let reqwest_client = if let Err(e) = reqwest_client {
+        crit!(log, "failed to created reqwest client: {:?}", e);
+        panic!("")
+    } else {
+        reqwest_client.unwrap()
+    };
+
+    let mut res = reqwest_client
+        .get(&format!(
+            "{}?key={}&location={}",
+            GEOCODING_API_BASE,
+            cfg.geocoding_key.as_ref().unwrap(),
+            location
+        ))
+        .send();
+    let (latitude, longitude) = if let Err(e) = res {
+        crit!(log, "Failed to query geocoding API: {}", e);
+        panic!("")
+    } else if !res.as_ref().unwrap().status().is_success() {
+        crit!(
+            log,
+            "Failed to query geocoding API: {}",
+            res.unwrap().status()
+        );
+        panic!("")
+    } else {
+        let mut body = String::new();
+        res.unwrap().read_to_string(&mut body).unwrap();
+
+        let json: Value = de::from_str(&body).unwrap();
+        (
+            json.pointer("/results/0/locations/0/latLng/lat")
+                .unwrap()
+                .as_f64()
+                .unwrap(),
+            json.pointer("/results/0/locations/0/latLng/lng")
+                .unwrap()
+                .as_f64()
+                .unwrap(),
+        )
+    };
+    trace!(log, "lat: {}; lng: {}", latitude, longitude);
+
+    /*
+    let api_client = ApiClient::new(&reqwest_client);
+
+	let mut blocks = vec![ExcludeBlock::Daily, ExcludeBlock::Alerts];
+
+    let forecast_request = ForecastRequestBuilder::new(api_key, LAT, LONG)
+        .exclude_block(ExcludeBlock::Hourly)
+        .exclude_blocks(&mut blocks)
+        .extend(ExtendBy::Hourly)
+        .lang(Lang::Arabic)
+        .units(Units::Imperial)
+        .build();
+	// dont forget to get header for remaining api call num
+
+    */
     unimplemented!()
 }

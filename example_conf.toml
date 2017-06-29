@@ -1,17 +1,20 @@
 [[server]]
 address = "irc.rizon.net"
 nickname = "parabot"
-#optional: alternative_nicknames = ["weebot"]
+# optional: alternative_nicknames = ["weebot"]
 nickserv_password = "test123"
 # optional: server_password = "test123"
 database = "parabot_empty.db" # Needs actual URL, different servers may populate the same db
 # optional: weather_api_secret = "secret" a https://darksky.net API secret
+# optional: geocoding_api_key = "key" a https://developer.mapquest.com API key
 # optional: max_burst_messages = 4
 # optional: burst_window_length = 8 # Time between bursts in seconds
 port = 6697
 	[[server.channel]]
 	name = "#c"
-	#optional: password = "channel_key"
+	# optional: password = "channel_key"
+	# These are *all* available values, making this obscenely verbose. Please don't use all of them!
+	# optional: weather_format = "TO BE DONE"
 	modules = ["url", "tell", "weather", "wolfram-alpha"]
 	[[server.channel]]
 	name = "#news"

@@ -20,11 +20,13 @@
 
 extern crate chrono;
 extern crate crossbeam;
-extern crate hyper;
+extern crate forecast;
 extern crate irc;
 extern crate parking_lot;
 extern crate regex;
+extern crate reqwest;
 extern crate serde;
+extern crate serde_json;
 extern crate slog_async;
 extern crate slog_term;
 extern crate threadpool;
@@ -137,7 +139,7 @@ fn main() {
                 let srv = srv2.clone();
                 let log = log.clone();
                 pool.execute(move || modules::handle(&cfg, &srv, &log, msg));
-            });
+            }).unwrap();
         });
     });
 }
