@@ -119,6 +119,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
                     if let Some(old_loc) = cache.get(&(cfg.address.clone(), nick.to_owned())).cloned() {
                         // Only update if the location actually changed
                         if &*old_loc != &*new_loc {
+                        	trace!(log, "Updating Cache/DB");
                             cache.remove(&(cfg.address.clone(), nick.to_owned()));
                             cache.insert((cfg.address.clone(), nick.to_owned()), new_loc.clone());
                             drop(cache);
@@ -133,8 +134,11 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
                             {
                                 crit!(log, "Failed to update weather location: {:?}", e);
                             }
+                        } else {
+                            trace!(log, "No update needed")
                         }
                     } else {
+                    	trace!(log, "Inserting into Cache/DB");
                         cache.insert((cfg.address.clone(), nick.to_owned()), new_loc.clone());
                         drop(cache);
 

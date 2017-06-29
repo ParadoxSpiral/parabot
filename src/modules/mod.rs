@@ -69,7 +69,9 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
         Command::Response(Response::RPL_ENDOFNAMES, ..) |
         Command::Response(Response::RPL_TOPIC, ..) |
         Command::PART(..) |
-        Command::ChannelMODE(..) => trace!(log, "{:?}", msg),
+        Command::ChannelMODE(..) |
+        Command::PING(..) |
+        Command::PONG(..) => trace!(log, "{:?}", msg),
         Command::Raw(ref s, ..) if s == "250" || s == "265" || s == "266" => {
             trace!(log, "{:?}", msg)
         }
