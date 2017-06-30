@@ -55,7 +55,6 @@ pub struct ServerCfg {
 pub struct ChannelCfg {
     pub name: String,
     pub password: Option<String>,
-    pub weather_format: Option<String>,
     pub modules: Vec<String>,
 }
 
@@ -85,8 +84,8 @@ impl<'a> From<&'a ServerCfg> for IrcServer {
                     Some(hm)
                 }
             },
-            max_messages_in_burst: srv.max_burst_messages.clone(),
-            burst_window_length: srv.burst_window_length.clone(),
+            max_messages_in_burst: srv.max_burst_messages,
+            burst_window_length: srv.burst_window_length,
             encoding: Some("UTF-8".to_owned()),
             should_ghost: Some(true),
             version: Some(format!(

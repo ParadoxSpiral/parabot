@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
-#![feature(const_fn)]
+#![feature(const_fn, inclusive_range, inclusive_range_syntax)]
 #![allow(unknown_lints)]
 
 extern crate chrono;
@@ -113,7 +113,7 @@ fn main() {
 
     // Init state of each server
     let mut state = Vec::with_capacity(config.servers.len());
-    for cfg in config.servers.into_iter() {
+    for cfg in config.servers {
         // Avoid premature move of cfg into first tuple elem
         let srv = Arc::new(IrcServer::from(&cfg));
         let log = Arc::new(SLOG_ROOT.new(o!(

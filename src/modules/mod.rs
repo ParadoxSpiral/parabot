@@ -32,8 +32,8 @@ mod weather;
 
 const COMMAND_MODIFIER: char = '.';
 // TODO: I'm not sure what the actual limit is, I read that the server may add crap to your msg,
-// so there's 30 bytes for that
-const MESSAGE_BYTES_LIMIT: usize = 482;
+// so there's 32 bytes for that
+const MESSAGE_BYTES_LIMIT: usize = 480;
 
 lazy_static!{
     static ref HOSTNAMES: RwLock<HashMap<String, String>> = {
@@ -70,7 +70,8 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
         Command::PART(..) |
         Command::ChannelMODE(..) |
         Command::PING(..) |
-        Command::PONG(..) => trace!(log, "{:?}", msg),
+        Command::PONG(..) |
+        Command::Response(Response::RPL_TOPICWHOTIME, ..) => trace!(log, "{:?}", msg),
         Command::Raw(ref s, ..) if s == "250" || s == "265" || s == "266" => {
             trace!(log, "{:?}", msg)
         }
@@ -124,8 +125,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
                 {
                     trace!(log, "Starting .weather");
                     let nick = msg.source_nickname().unwrap();
-                    let chan_cfg = cfg.channels.iter().find(|c| &c.name == target);
-                    let reply = weather::handle(cfg, chan_cfg, srv, log, &content[9..], nick);
+                    let reply = weather::handle(cfg, srv, log, &content[8..], nick);
                     send_segmented_message(cfg, srv, log, reply_target, &reply, private);
                 } else {
                     warn!(log, "Unknown command {}", &content[1..]);
@@ -176,14 +176,37 @@ fn send_segmented_message(
         send_err(msg);
     } else {
         let mut count = 0;
+        let mut unclosed_bold_control = false;
         let mut msg = String::with_capacity(MESSAGE_BYTES_LIMIT - fix_bytes);
         for g in graphemes {
             let len = g.bytes().len();
+            // TODO: Since only the bold control code is used in the codebase right now,
+            // we only check that. Should be expanded to all in the future
+            if g == "\x02" && unclosed_bold_control {
+                unclosed_bold_control = false;
+            } else if g == "\x02" {
+                unclosed_bold_control = true;
+            }
             if count + len >= MESSAGE_BYTES_LIMIT - fix_bytes {
-                trace!(log, "Sending {} cut msg: {:?}", target, &msg);
+                if unclosed_bold_control {
+                    // FIXME: The added byte is currently not accounted for in the limit formula
+                    msg.push_str("\x02");
+                    trace!(
+                        log,
+                        "Sending (bold cc appended) {} cut msg: {:?}",
+                        target,
+                        &msg
+                    );
+                } else {
+                    trace!(log, "Sending {} cut msg: {:?}", target, &msg);
+                }
                 send_err(&msg);
                 count = 0;
                 msg.clear();
+                if unclosed_bold_control {
+                    count += 1;
+                    msg.push_str("\x02");
+                }
             }
             count += len;
             msg.push_str(g);
@@ -197,14 +220,13 @@ fn send_segmented_message(
 fn establish_database_connection(cfg: &ServerCfg, log: &Logger) -> SqliteConnection {
     let ret = SqliteConnection::establish(&cfg.database);
     if ret.is_err() {
-        crit!(
-            log,
-            "Failed to connect to database {}: {}",
-            cfg.database,
-            // The T does not impl Debug, so no .unwrap_err
-            if let Err(e) = ret { e } else { unreachable!() }
-        );
-        panic!("")
+        // The T does not impl Debug, so no .unwrap_err
+        if let Err(e) = ret {
+            crit!(log, "Failed to connect to database {}: {}", cfg.database, e);
+            panic!("Failed to connect to database {}: {}", cfg.database, e)
+        } else {
+            unreachable!()
+        }
     } else {
         trace!(
             log,
