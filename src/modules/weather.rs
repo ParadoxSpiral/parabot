@@ -254,7 +254,7 @@ pub fn handle(cfg: &ServerCfg, log: &Logger, msg: &str, nick: &str) -> String {
                 drop(cache);
                 GEOCODING_CACHE.write().insert(location.clone(), (lat, lng));
 
-                let conn = conn.or_else(||Some(super::establish_database_connection(cfg, log)))
+                let conn = conn.or_else(|| Some(super::establish_database_connection(cfg, log)))
                     .unwrap();
                 let new = models::NewGeocode {
                     location: &location,
@@ -287,7 +287,7 @@ pub fn handle(cfg: &ServerCfg, log: &Logger, msg: &str, nick: &str) -> String {
     };
 
     // future, n, hours, days, location
-    let client = client.or_else(||Some(Client::new().unwrap())).unwrap();
+    let client = client.or_else(|| Some(Client::new().unwrap())).unwrap();
     let api_client = ApiClient::new(&client);
     let secret = cfg.weather_secret.as_ref().unwrap();
     let mut builder = ForecastRequestBuilder::new(secret, latitude as f64, longitude as f64)
@@ -298,7 +298,11 @@ pub fn handle(cfg: &ServerCfg, log: &Logger, msg: &str, nick: &str) -> String {
             .exclude_block(ExcludeBlock::Hourly)
             .exclude_block(ExcludeBlock::Daily);
     } else if n.is_some() && (n.unwrap() > 48 && hours) {
-        builder = builder.extend(ExtendBy::Hourly);
+        builder = builder
+            .exclude_block(ExcludeBlock::Currently)
+            .extend(ExtendBy::Hourly);
+    } else if days || hours {
+        builder = builder.exclude_block(ExcludeBlock::Currently);
     }
     let res = api_client.get_forecast(builder.build());
     let mut res = if let Err(e) = res {
