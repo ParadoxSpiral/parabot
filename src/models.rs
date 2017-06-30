@@ -39,16 +39,31 @@ pub struct NewPendingTell<'a> {
 }
 
 #[derive(Debug, Queryable)]
-pub struct LastWeatherSearch {
+pub struct Location {
     pub server: String,
     pub nick: String,
     pub location: String,
 }
 
 #[derive(Debug, Insertable)]
-#[table_name = "last_weather_search"]
-pub struct NewLastWeatherSearch<'a> {
+#[table_name = "location_cache"]
+pub struct NewLocation<'a> {
     pub server: &'a str,
     pub nick: &'a str,
     pub location: &'a str,
+}
+
+#[derive(Debug, Queryable)]
+pub struct Geocode {
+    pub location: String,
+    pub latitude: f32,
+    pub longitude: f32,
+}
+
+#[derive(Debug, Insertable)]
+#[table_name = "geocode_cache"]
+pub struct NewGeocode<'a> {
+    pub location: &'a str,
+    pub latitude: f32,
+    pub longitude: f32,
 }

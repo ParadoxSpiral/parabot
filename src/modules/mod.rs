@@ -124,8 +124,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
                 {
                     trace!(log, "Starting .weather");
                     let nick = msg.source_nickname().unwrap();
-                    let chan_cfg = cfg.channels.iter().find(|c| &c.name == target);
-                    let reply = weather::handle(cfg, chan_cfg, srv, log, &content[9..], nick);
+                    let reply = weather::handle(cfg, log, &content[8..], nick);
                     send_segmented_message(cfg, srv, log, reply_target, &reply, private);
                 } else {
                     warn!(log, "Unknown command {}", &content[1..]);
