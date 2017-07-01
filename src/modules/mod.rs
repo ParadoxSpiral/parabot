@@ -70,7 +70,8 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
         Command::PART(..) |
         Command::ChannelMODE(..) |
         Command::PING(..) |
-        Command::PONG(..) => trace!(log, "{:?}", msg),
+        Command::PONG(..) |
+        Command::Response(Response::RPL_TOPICWHOTIME, ..) => trace!(log, "{:?}", msg),
         Command::Raw(ref s, ..) if s == "250" || s == "265" || s == "266" => {
             trace!(log, "{:?}", msg)
         }

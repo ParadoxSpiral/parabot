@@ -17,8 +17,8 @@
 
 use diesel;
 use diesel::prelude::*;
-use forecast::{Alert, ApiResponse, ApiClient, DataPoint, ForecastRequestBuilder, ExcludeBlock, ExtendBy,
-               Units};
+use forecast::{Alert, ApiResponse, ApiClient, DataPoint, ForecastRequestBuilder, ExcludeBlock,
+               ExtendBy, Units};
 use irc::client::prelude::*;
 use parking_lot::RwLock;
 use regex::Regex;
@@ -155,7 +155,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
                         .cloned()
                     {
                         // Only update if the location actually changed
-                        if cached_loc != new_loc {
+                        if cached_loc.to_lowercase() != new_loc.to_lowercase() {
                             trace!(log, "Updating Cache/DB");
                             cache.remove(&(cfg.address.clone(), nick.to_owned()));
                             cache.insert((cfg.address.clone(), nick.to_owned()), new_loc.clone());
@@ -203,7 +203,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
 
     // Try to get geocode for location from cache, or request from API
     let cache = GEOCODING_CACHE.read();
-    let (latitude, longitude, client) = if let Some(&(lat, lng)) = cache.get(&location) {
+    let (latitude, longitude, client) = if let Some(&(lat, lng)) = cache.get(&location.to_lowercase()) {
         drop(cache);
         trace!(log, "Got geocode from cache: lat: {}; lng: {}", lat, lng);
         (lat, lng, None)
@@ -254,12 +254,12 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
                     .unwrap() as f32;
 
                 drop(cache);
-                GEOCODING_CACHE.write().insert(location.clone(), (lat, lng));
+                GEOCODING_CACHE.write().insert(location.to_lowercase().to_owned(), (lat, lng));
 
                 let conn = conn.or_else(|| Some(super::establish_database_connection(cfg, log)))
                     .unwrap();
                 let new = models::NewGeocode {
-                    location: &location,
+                    location: &location.to_lowercase(),
                     latitude: lat,
                     longitude: lng,
                 };
@@ -361,30 +361,56 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
         }
         if let Some(pp) = dp.precip_probability {
             if pp > 0.049f64 {
-                out.push_str(&format!("{}% chance of {:?}", (pp*100f64).round(), dp.precip_type.unwrap()));
+                if dp.wind_gust.is_some() || dp.wind_speed.is_some() {
+                    out.push_str(&format!(
+                        "{}% chance of {:?}; ",
+                        (pp * 100f64).round(),
+                        dp.precip_type.unwrap()
+                    ));
+                } else {
+                    out.push_str(&format!(
+                        "{}% chance of {:?}",
+                        (pp * 100f64).round(),
+                        dp.precip_type.unwrap()
+                    ));
+                }
             }
         }
         if let Some(wg) = dp.wind_gust {
-        	out.push_str(&format!("; Wind gusts: {}km/h", wg));
+            out.push_str(&format!("Wind gusts: {}km/h", wg));
         }
-		if let Some(ws) = dp.wind_speed {
-        	out.push_str(&format!("; Wind speed: {}km/h", ws));
-        }
-    };
-    let format_alerts = |out: &mut String, alerts: Option<Vec<Alert>>| {
-        if let Some(alerts) = alerts {
-        	if alerts.len() > 1 {
-        		let mut reply = String::new();
-        		for (n, a) in alerts.iter().enumerate() {
-        			reply.push_str(&format!("{}, severity: {:?} in {:?}; See <{}>; ", n, a.severity, &a.regions, a.uri));
-        		}
-        		super::send_segmented_message(cfg, srv, log, nick, reply.trim_right(), true);
-        		out.push_str(&format!("PMed {} alerts", alerts.len()));
+        if let Some(ws) = dp.wind_speed {
+        	if dp.wind_gust.is_none() {
+        		out.push_str(&format!("Wind speed: {}km/h", ws));
         	} else {
-        	    out.push_str(&format!("Alert, severity: {:?} in {:?}; See <{}>", alerts[0].severity, &alerts[0].regions, alerts[0].uri));
-        	}
+        	    out.push_str(&format!(", wind speed: {}km/h", ws));
+        	}            
         }
     };
+    let format_alerts =
+        |out: &mut String, alerts: Option<Vec<Alert>>| if let Some(alerts) = alerts {
+            if alerts.len() > 1 {
+                let mut reply = String::new();
+                for (n, a) in alerts.iter().enumerate() {
+                    reply.push_str(&format!(
+                        "{}, severity: {:?} in {:?}; See <{}>; ",
+                        n,
+                        a.severity,
+                        &a.regions,
+                        a.uri
+                    ));
+                }
+                super::send_segmented_message(cfg, srv, log, nick, reply.trim_right(), true);
+                out.push_str(&format!("; PMed {} alerts", alerts.len()));
+            } else {
+                out.push_str(&format!(
+                    "; Alert, severity: {:?} in {:?}; See <{}>",
+                    alerts[0].severity,
+                    &alerts[0].regions,
+                    alerts[0].uri
+                ));
+            }
+        };
 
     if !days && !hours {
         let cly = res.currently.unwrap();
