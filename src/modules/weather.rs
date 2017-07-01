@@ -17,7 +17,9 @@
 
 use diesel;
 use diesel::prelude::*;
-use forecast::{ApiResponse, ApiClient, ForecastRequestBuilder, ExcludeBlock, ExtendBy, Units};
+use forecast::{Alert, ApiResponse, ApiClient, DataPoint, ForecastRequestBuilder, ExcludeBlock, ExtendBy,
+               Units};
+use irc::client::prelude::*;
 use parking_lot::RwLock;
 use regex::Regex;
 use reqwest::Client;
@@ -90,7 +92,7 @@ pub fn init(cfg: &Config, log: &Logger) {
     }
 }
 
-pub fn handle(cfg: &ServerCfg, log: &Logger, msg: &str, nick: &str) -> String {
+pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &str) -> String {
     let mut conn = None;
     let (future, n, hours, days, location) = {
         // Use last location
@@ -145,7 +147,7 @@ pub fn handle(cfg: &ServerCfg, log: &Logger, msg: &str, nick: &str) -> String {
                 h,
                 d,
                 if let Some(loc) = captures.name("location") {
-                    let new_loc = loc.as_str().to_owned();
+                    let new_loc = loc.as_str().trim().to_owned();
                     // Potentially update the cache and DB
                     let mut cache = LOCATION_CACHE.write();
                     if let Some(cached_loc) = cache
@@ -334,5 +336,64 @@ pub fn handle(cfg: &ServerCfg, log: &Logger, msg: &str, nick: &str) -> String {
     res.read_to_string(&mut body).unwrap();
     let res: ApiResponse = de::from_str(&body).unwrap();
 
-    format!("{:?}", res)
+    let format_data_point = |out: &mut String, dp: DataPoint| {
+        if let Some(s) = dp.summary {
+            out.push_str(&format!("{}: ", s.to_lowercase()));
+        }
+        if let Some(t) = dp.apparent_temperature {
+            out.push_str(&format!("{}°C; ", t));
+        } else if let Some(t) = dp.temperature {
+            out.push_str(&format!("{}°C; ", t));
+        }
+        if let Some(cc) = dp.cloud_cover {
+            if let Some(h) = dp.humidity {
+                out.push_str(&format!(
+                    "{}% cloud cover, {}% humidity; ",
+                    (cc * 100f64).round(),
+                    (h * 100f64).round()
+                ));
+            } else {
+                out.push_str(&format!("{}% cloud cover; ", (cc * 100f64).round()));
+            }
+        }
+        if let Some(v) = dp.visibility {
+            out.push_str(&format!("visibility: {}km; ", v));
+        }
+        if let Some(pp) = dp.precip_probability {
+            if pp > 0.049f64 {
+                out.push_str(&format!("{}% chance of {:?}", (pp*100f64).round(), dp.precip_type.unwrap()));
+            }
+        }
+        if let Some(wg) = dp.wind_gust {
+        	out.push_str(&format!("; Wind gusts: {}km/h", wg));
+        }
+		if let Some(ws) = dp.wind_speed {
+        	out.push_str(&format!("; Wind speed: {}km/h", ws));
+        }
+    };
+    let format_alerts = |out: &mut String, alerts: Option<Vec<Alert>>| {
+        if let Some(alerts) = alerts {
+        	if alerts.len() > 1 {
+        		let mut reply = String::new();
+        		for (n, a) in alerts.iter().enumerate() {
+        			reply.push_str(&format!("{}, severity: {:?} in {:?}; See <{}>; ", n, a.severity, &a.regions, a.uri));
+        		}
+        		super::send_segmented_message(cfg, srv, log, nick, reply.trim_right(), true);
+        		out.push_str(&format!("PMed {} alerts", alerts.len()));
+        	} else {
+        	    out.push_str(&format!("Alert, severity: {:?} in {:?}; See <{}>", alerts[0].severity, &alerts[0].regions, alerts[0].uri));
+        	}
+        }
+    };
+
+    if !days && !hours {
+        let cly = res.currently.unwrap();
+        let mut formatted = String::new();
+        formatted.push_str(&format!("Current weather in {} is ", location));
+        format_data_point(&mut formatted, cly);
+        format_alerts(&mut formatted, res.alerts);
+        formatted
+    } else {
+        "Sorry, formatting not yet implemented!".to_owned()
+    }
 }
