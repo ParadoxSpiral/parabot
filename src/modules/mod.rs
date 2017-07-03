@@ -32,8 +32,8 @@ mod weather;
 
 const COMMAND_MODIFIER: char = '.';
 // TODO: I'm not sure what the actual limit is, I read that the server may add crap to your msg,
-// so there's 32 bytes for that
-const MESSAGE_BYTES_LIMIT: usize = 480;
+// so there's 30 bytes for that
+const MESSAGE_BYTES_LIMIT: usize = 478;
 
 lazy_static!{
     static ref HOSTNAMES: RwLock<HashMap<String, String>> = {
@@ -156,9 +156,9 @@ fn send_segmented_message(
 ) {
     let graphemes = UnicodeSegmentation::graphemes(msg, true);
     let msg_bytes = msg.bytes().len();
-    // :<hostname> <PRIVMSG|NOTICE> <target> :<message>
-    let fix_bytes = 1 + HOSTNAMES.read().get(&cfg.address).unwrap().bytes().len() + 1 +
-        if private { 7 } else { 6 } + 1 + target.bytes().len() + 2;
+    // :<hostname> <PRIVMSG|NOTICE> <target> :<message> [potential added escape chars]
+    let fix_bytes = 1 + HOSTNAMES.read().get(&cfg.address).unwrap().bytes().len() +
+        1 + if private { 7 } else { 6 } + 1 + target.bytes().len() + 2 + 7;
     trace!(log, "Msg bytes: {}; Fix bytes: {}", msg_bytes, fix_bytes);
 
     let send_err = |msg: &str| {
@@ -176,37 +176,80 @@ fn send_segmented_message(
         send_err(msg);
     } else {
         let mut count = 0;
-        let mut unclosed_bold_control = false;
+        let mut unescaped_controls = [false, false, false, false, false, false, false];
         let mut msg = String::with_capacity(MESSAGE_BYTES_LIMIT - fix_bytes);
         for g in graphemes {
             let len = g.bytes().len();
-            // TODO: Since only the bold control code is used in the codebase right now,
-            // we only check that. Should be expanded to all in the future
-            if g == "\x02" && unclosed_bold_control {
-                unclosed_bold_control = false;
-            } else if g == "\x02" {
-                unclosed_bold_control = true;
+            // TODO: Is there any better way to do this?
+            // For magic values see  https://stackoverflow.com/questions/1391610/embed-mirc-color-
+            // codes-into-a-c-sharp-literal/13382032#13382032
+            if g == "\x02" {
+                if unescaped_controls[0] {
+                    unescaped_controls[0] = false;
+                } else {
+                    unescaped_controls[0] = true;
+                }
+            } else if g == "\x03" {
+                if unescaped_controls[1] {
+                    unescaped_controls[1] = false;
+                } else {
+                    unescaped_controls[1] = true;
+                }
+            } else if g == "\x09" {
+                if unescaped_controls[2] {
+                    unescaped_controls[2] = false;
+                } else {
+                    unescaped_controls[2] = true;
+                }
+            } else if g == "\x13" {
+                if unescaped_controls[3] {
+                    unescaped_controls[3] = false;
+                } else {
+                    unescaped_controls[3] = true;
+                }
+            } else if g == "\x15" {
+                if unescaped_controls[4] {
+                    unescaped_controls[4] = false;
+                } else {
+                    unescaped_controls[4] = true;
+                }
+            } else if g == "\x1f" {
+                if unescaped_controls[5] {
+                    unescaped_controls[5] = false;
+                } else {
+                    unescaped_controls[5] = true;
+                }
+            } else if g == "\x16" {
+                if unescaped_controls[6] {
+                    unescaped_controls[6] = false;
+                } else {
+                    unescaped_controls[6] = true;
+                }
             }
             if count + len >= MESSAGE_BYTES_LIMIT - fix_bytes {
-                if unclosed_bold_control {
-                    // FIXME: The added byte is currently not accounted for in the limit formula
-                    msg.push_str("\x02");
-                    trace!(
-                        log,
-                        "Sending (bold cc appended) {} cut msg: {:?}",
-                        target,
-                        &msg
-                    );
-                } else {
-                    trace!(log, "Sending {} cut msg: {:?}", target, &msg);
-                }
+                let if_any_unescaped_push = |out: &mut String| if unescaped_controls[0] {
+                    out.push_str("\x02");
+                } else if unescaped_controls[1] {
+                    out.push_str("\x03");
+                } else if unescaped_controls[2] {
+                    out.push_str("\x09");
+                } else if unescaped_controls[3] {
+                    out.push_str("\x13");
+                } else if unescaped_controls[4] {
+                    out.push_str("\x15");
+                } else if unescaped_controls[5] {
+                    out.push_str("\x1f");
+                } else if unescaped_controls[6] {
+                    out.push_str("\x16");
+                };
+
+                if_any_unescaped_push(&mut msg);
+                trace!(log, "Sending {} cut msg: {:?}", target, &msg);
+
                 send_err(&msg);
                 count = 0;
                 msg.clear();
-                if unclosed_bold_control {
-                    count += 1;
-                    msg.push_str("\x02");
-                }
+                if_any_unescaped_push(&mut msg);
             }
             count += len;
             msg.push_str(g);
