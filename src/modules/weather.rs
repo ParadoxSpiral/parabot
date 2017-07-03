@@ -94,10 +94,10 @@ pub fn init(cfg: &Config, log: &Logger) {
 
 pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &str) -> String {
     let mut conn = None;
-    let (future, n, hours, days, location) = {
+    let (range, hours, days, location) = {
         // Use last location
         if msg.is_empty() {
-            (false, None, false, false, {
+            (0...0, false, false, {
                 if let Some(cached) = LOCATION_CACHE
                     .read()
                     .get(&(cfg.address.clone(), nick.to_owned()))
@@ -111,17 +111,16 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
             // Only compile the regex once
             lazy_static! {
 		        static ref REGEX: Regex = Regex::new("\
-		        	(?P<plus>\\+){0,1}\
-		        	(?P<digits>\\d+){0,1}\
-		        	(?:(?P<h>h)|\
-		        	    (?P<d>d)|\
-		        	    (?:\
-		        	   	    \\s{0,}\
-			        	    (?: (?P<hours>hours)|\
-			        	    	(?P<days>days)))\
-		        	){0,1}\
 		        	\\s{0,}\
-		        	(?P<location>.+)").unwrap();
+		        	(?:\
+                        (?:(?:(?P<range_x>\\d+)-(?P<range_y>\\d+))\
+                             |(?P<digits>\\d+))\
+                        \\s{0,}\
+			        	(?:(?P<h>h)|(?P<d>d))\
+                        \\s{0,}\
+                        (?P<inner_location>.+){0,1}\
+			        )|\
+		        	(?P<outer_location>.+)").unwrap();
 		    }
 
             let captures = if let Some(caps) = REGEX.captures(&msg[1..]) {
@@ -132,70 +131,94 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
                 return "Invalid `.weather` syntax, try: `.help weather`".into();
             };
 
-            let n = captures
-                .name("digits")
-                .and_then(|m| Some(m.as_str().parse::<usize>().unwrap()));
+            let range = if let Some(d) = captures.name("digits") {
+                let n = d.as_str().parse::<usize>().unwrap();
+                n...n
+            } else if let (Some(x), Some(y)) =
+                (captures.name("range_x"), captures.name("range_y"))
+            {
+                let x = x.as_str().parse::<usize>().unwrap();
+                let y = y.as_str().parse::<usize>().unwrap();
+                x...y
+            } else {
+                0...0
+            };
             let h = captures.name("h").is_some() || captures.name("hours").is_some();
             let d = captures.name("d").is_some() || captures.name("days").is_some();
-            if n.is_some() && (n.unwrap() > 168 && h || n.unwrap() > 7 && d) {
+            if range.end > 168 && h || range.end > 7 && d {
                 return "Weather data is only available for the next 168h or 7d.".to_owned();
             }
 
             (
-                captures.name("plus").is_some(),
-                n,
+                range,
                 h,
                 d,
-                if let Some(loc) = captures.name("location") {
-                    let new_loc = loc.as_str().trim().to_owned();
-                    // Potentially update the cache and DB
-                    let mut cache = LOCATION_CACHE.write();
-                    if let Some(cached_loc) = cache
-                        .get(&(cfg.address.clone(), nick.to_owned()))
-                        .cloned()
-                    {
-                        // Only update if the location actually changed
-                        if cached_loc.to_lowercase() != new_loc.to_lowercase() {
-                            trace!(log, "Updating Cache/DB");
-                            cache.remove(&(cfg.address.clone(), nick.to_owned()));
+                match (
+                    captures.name("inner_location"),
+                    captures.name("outer_location"),
+                ) {
+                    (Some(loc), None) |
+                    (None, Some(loc)) => {
+                        let new_loc = loc.as_str().trim().to_owned();
+                        // Potentially update the cache and DB
+                        let mut cache = LOCATION_CACHE.write();
+                        if let Some(cached_loc) = cache
+                            .get(&(cfg.address.clone(), nick.to_owned()))
+                            .cloned()
+                        {
+                            // Only update if the location actually changed
+                            if cached_loc.to_lowercase() != new_loc.to_lowercase() {
+                                trace!(log, "Updating Cache/DB");
+                                cache.remove(&(cfg.address.clone(), nick.to_owned()));
+                                cache.insert((cfg.address.clone(), nick.to_owned()), new_loc.clone());
+                                drop(cache);
+
+                                conn = Some(super::establish_database_connection(cfg, log));
+                                if let Err(e) = diesel::update(
+                                    lc_dsl::location_cache
+                                        .filter(lc_dsl::server.eq(&cfg.address))
+                                        .filter(lc_dsl::nick.eq(nick)),
+                                ).set(lc_dsl::location.eq(new_loc.clone()))
+                                    .execute(conn.as_ref().unwrap())
+                                {
+                                    crit!(log, "Failed to update weather table: {:?}", e);
+                                }
+                            } else {
+                                trace!(log, "No location update needed")
+                            }
+                        } else {
+                            trace!(log, "Inserting into Cache/DB");
                             cache.insert((cfg.address.clone(), nick.to_owned()), new_loc.clone());
                             drop(cache);
 
                             conn = Some(super::establish_database_connection(cfg, log));
-                            if let Err(e) = diesel::update(
-                                lc_dsl::location_cache
-                                    .filter(lc_dsl::server.eq(&cfg.address))
-                                    .filter(lc_dsl::nick.eq(nick)),
-                            ).set(lc_dsl::location.eq(new_loc.clone()))
+                            let new = models::NewLocation {
+                                server: &cfg.address,
+                                nick: nick,
+                                location: &*new_loc,
+                            };
+                            if let Err(e) = diesel::insert(&new)
+                                .into(schema::location_cache::table)
                                 .execute(conn.as_ref().unwrap())
                             {
                                 crit!(log, "Failed to update weather table: {:?}", e);
                             }
-                        } else {
-                            trace!(log, "No location update needed")
                         }
-                    } else {
-                        trace!(log, "Inserting into Cache/DB");
-                        cache.insert((cfg.address.clone(), nick.to_owned()), new_loc.clone());
-                        drop(cache);
-
-                        conn = Some(super::establish_database_connection(cfg, log));
-                        let new = models::NewLocation {
-                            server: &cfg.address,
-                            nick: nick,
-                            location: &*new_loc,
-                        };
-                        if let Err(e) = diesel::insert(&new)
-                            .into(schema::location_cache::table)
-                            .execute(conn.as_ref().unwrap())
+                        new_loc
+                    }
+                    (Some(_), Some(_)) => unreachable!(),
+                    (None, None) => {
+                        let cache = LOCATION_CACHE.read();
+                        if let Some(cached_loc) = cache
+                            .get(&(cfg.address.clone(), nick.to_owned()))
+                            .cloned()
                         {
-                            crit!(log, "Failed to update weather table: {:?}", e);
+                            cached_loc
+                        } else {
+                            debug!(log, "No location found");
+                            return "Invalid `.weather` syntax, try: `.help weather`".into();
                         }
                     }
-                    new_loc
-                } else {
-                    debug!(log, "No location found");
-                    return "Invalid `.weather` syntax, try: `.help weather`".into();
                 },
             )
         }
@@ -203,7 +226,9 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
 
     // Try to get geocode for location from cache, or request from API
     let cache = GEOCODING_CACHE.read();
-    let (latitude, longitude, client) = if let Some(&(lat, lng)) = cache.get(&location.to_lowercase()) {
+    let (latitude, longitude, client) = if let Some(&(lat, lng)) =
+        cache.get(&location.to_lowercase())
+    {
         drop(cache);
         trace!(log, "Got geocode from cache: lat: {}; lng: {}", lat, lng);
         (lat, lng, None)
@@ -254,7 +279,9 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
                     .unwrap() as f32;
 
                 drop(cache);
-                GEOCODING_CACHE.write().insert(location.to_lowercase().to_owned(), (lat, lng));
+                GEOCODING_CACHE
+                    .write()
+                    .insert(location.to_lowercase().to_owned(), (lat, lng));
 
                 let conn = conn.or_else(|| Some(super::establish_database_connection(cfg, log)))
                     .unwrap();
@@ -299,7 +326,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
         builder = builder
             .exclude_block(ExcludeBlock::Hourly)
             .exclude_block(ExcludeBlock::Daily);
-    } else if n.is_some() && (n.unwrap() > 48 && hours) {
+    } else if range.end > 48 && hours {
         builder = builder
             .exclude_block(ExcludeBlock::Currently)
             .extend(ExtendBy::Hourly);
@@ -340,10 +367,18 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
         if let Some(s) = dp.summary {
             out.push_str(&format!("{}: ", s.to_lowercase()));
         }
-        if let Some(t) = dp.apparent_temperature {
-            out.push_str(&format!("{}°C; ", t));
+        if days {
+            if let (Some(tmi), Some(tma)) =
+                (dp.apparent_temperature_min, dp.apparent_temperature_max)
+            {
+                out.push_str(&format!("\x02{}-{}\x02°C; ", tmi, tma));
+            } else if let (Some(tmi), Some(tma)) = (dp.temperature_min, dp.temperature_max) {
+                out.push_str(&format!("\x02{}-{}\x02°C; ", tmi, tma));
+            }
+        } else if let Some(t) = dp.apparent_temperature {
+            out.push_str(&format!("\x02{}\x02°C; ", t));
         } else if let Some(t) = dp.temperature {
-            out.push_str(&format!("{}°C; ", t));
+            out.push_str(&format!("\x02{}\x02°C; ", t));
         }
         if let Some(cc) = dp.cloud_cover {
             if let Some(h) = dp.humidity {
@@ -380,15 +415,16 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
             out.push_str(&format!("Wind gusts: {}km/h", wg));
         }
         if let Some(ws) = dp.wind_speed {
-        	if dp.wind_gust.is_none() {
-        		out.push_str(&format!("Wind speed: {}km/h", ws));
-        	} else {
-        	    out.push_str(&format!(", wind speed: {}km/h", ws));
-        	}            
+            if dp.wind_gust.is_none() {
+                out.push_str(&format!("Wind speed: {}km/h", ws));
+            } else {
+                out.push_str(&format!(", wind speed: {}km/h", ws));
+            }
         }
     };
     let format_alerts =
         |out: &mut String, alerts: Option<Vec<Alert>>| if let Some(alerts) = alerts {
+            // FIXME: Check if alert expired in rewuested timeframe
             if alerts.len() > 1 {
                 let mut reply = String::new();
                 for (n, a) in alerts.iter().enumerate() {
@@ -412,14 +448,50 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
             }
         };
 
-    if !days && !hours {
-        let cly = res.currently.unwrap();
-        let mut formatted = String::new();
-        formatted.push_str(&format!("Current weather in {} is ", location));
-        format_data_point(&mut formatted, cly);
-        format_alerts(&mut formatted, res.alerts);
-        formatted
+    let mut formatted = String::new();
+    if range.start == range.end && range.start == 0 {
+        let data;
+        if days {
+            data = res.daily.unwrap().data[0].clone();
+            formatted.push_str(&format!("Today's weather in {} is ", location));
+            format_data_point(&mut formatted, data);
+        } else {
+            data = res.currently.unwrap();
+            formatted.push_str(&format!("Current weather in {} is ", location));
+            format_data_point(&mut formatted, data);
+        }
     } else {
-        "Sorry, formatting not yet implemented!".to_owned()
+        let data;
+        if hours {
+            data = res.hourly.unwrap();
+            formatted.push_str(&format!(
+                "Weather in the next {}-{}h in {}: ",
+                range.start,
+                range.end,
+                location
+            ));
+        } else {
+            data = res.daily.unwrap();
+            formatted.push_str(&format!(
+                "Weather in the next {}-{}d in {}: ",
+                range.start,
+                range.end,
+                location
+            ));
+        }
+        for (n, data) in data.data[range.start...range.end]
+            .into_iter()
+            .cloned()
+            .enumerate()
+        {
+            formatted.push_str(&format!("\x02{}:\x02 ", n + range.start));
+            format_data_point(&mut formatted, data);
+            if n + range.start != range.end {
+                formatted.push_str("--- ");
+            }
+        }
     }
+    format_alerts(&mut formatted, res.alerts);
+
+    formatted
 }
