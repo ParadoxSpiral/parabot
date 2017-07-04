@@ -426,17 +426,15 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
         |out: &mut String, alerts: Option<Vec<Alert>>| if let Some(alerts) = alerts {
             // FIXME: Check if alert expired in rewuested timeframe
             if alerts.len() > 1 {
-                let mut reply = String::new();
                 for (n, a) in alerts.iter().enumerate() {
-                    reply.push_str(&format!(
+                    super::send_segmented_message(cfg, srv, log, nick, &format!(
                         "{}, severity: {:?} in {:?}; See <{}>; ",
                         n,
                         a.severity,
                         &a.regions,
                         a.uri
-                    ));
-                }
-                super::send_segmented_message(cfg, srv, log, nick, reply.trim_right(), true);
+                    ).trim_right(), true);
+                }                
                 out.push_str(&format!("; PMed {} alerts", alerts.len()));
             } else {
                 out.push_str(&format!(
@@ -458,6 +456,17 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
         } else {
             data = res.currently.unwrap();
             formatted.push_str(&format!("Current weather in {} is ", location));
+            format_data_point(&mut formatted, data);
+        }
+    } else if range.start == range.end {
+        let data;
+        if days {
+            data = res.daily.unwrap().data[range.start].clone();
+            formatted.push_str(&format!("Weather in {}d in {} is ", range.start, location));
+            format_data_point(&mut formatted, data);
+        } else {
+            data = res.hourly.unwrap().data[range.start].clone();
+            formatted.push_str(&format!("Weather in {}h in {} is ", range.start, location));
             format_data_point(&mut formatted, data);
         }
     } else {
