@@ -21,18 +21,20 @@ pub fn handle(cfg: &ServerCfg, target: &str, msg: &str, private: bool) -> String
     if &msg[1..] == "help" {
         if private {
             "Hi! For more information, use .help <module>. In private (i.e. non channel mode) \
-             you can use these modules: `tell`, `weather`, `wolfram-alpha`."
+             you can use these modules: `remind`, `weather`, `wolfram-alpha`, `tell`."
                 .to_owned()
         } else {
+            let mut modules = cfg.channels
+                .iter()
+                .find(|c| &*c.name == target)
+                .unwrap()
+                .modules
+                .clone();
+            modules.sort();
             format!(
-                "Hi! For more information, use .help <module>. \
+                "For more information, use .help <module>. \
                  Enabled modules: {:?}",
-                cfg.channels
-                    .iter()
-                    .find(|c| &*c.name == target)
-                    .unwrap()
-                    .modules
-                    .as_slice()
+                &modules
             )
         }
     } else {

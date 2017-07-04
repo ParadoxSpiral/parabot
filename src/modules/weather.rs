@@ -89,7 +89,10 @@ pub fn init(cfg: &Config, log: &Logger) {
         } else {
             debug!(log, "Geocode cache: {:?}", geocodes.as_ref().unwrap());
             for g in geocodes.unwrap() {
-                gc.insert(g.location.clone(), (g.latitude, g.longitude, g.reverse_location));
+                gc.insert(
+                    g.location.clone(),
+                    (g.latitude, g.longitude, g.reverse_location),
+                );
             }
             gc.shrink_to_fit();
         };
@@ -231,7 +234,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
     // Try to get geocode for location from cache, or request from API
     let cache = GEOCODING_CACHE.read();
     let (latitude, longitude, reverse_location, client) = if let Some((lat, lng, revl)) =
-    cache.get(&location.to_lowercase()).cloned()
+        cache.get(&location.to_lowercase()).cloned()
     {
         trace!(
             log,
@@ -330,10 +333,22 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
                     res.unwrap().read_to_string(&mut body).unwrap();
                     let json: Value = de::from_str(&body).unwrap();
 
-                    let city = json.pointer("/results/0/locations/0/adminArea5").unwrap().as_str().unwrap();
-                    let county = json.pointer("/results/0/locations/0/adminArea4").unwrap().as_str().unwrap();
-                    let state = json.pointer("/results/0/locations/0/adminArea3").unwrap().as_str().unwrap();
-                    let country = json.pointer("/results/0/locations/0/adminArea1").unwrap().as_str().unwrap();
+                    let city = json.pointer("/results/0/locations/0/adminArea5")
+                        .unwrap()
+                        .as_str()
+                        .unwrap();
+                    let county = json.pointer("/results/0/locations/0/adminArea4")
+                        .unwrap()
+                        .as_str()
+                        .unwrap();
+                    let state = json.pointer("/results/0/locations/0/adminArea3")
+                        .unwrap()
+                        .as_str()
+                        .unwrap();
+                    let country = json.pointer("/results/0/locations/0/adminArea1")
+                        .unwrap()
+                        .as_str()
+                        .unwrap();
                     let mut out = String::new();
                     if city != "" {
                         out.push_str(&format!("{}, ", city));
@@ -527,33 +542,31 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
                                 &a.regions,
                                 a.uri
                             ).trim_right(),
-                            true,
+                            false,
                         );
                     }
                 }
                 if num != 0 {
                     out.push_str(&format!("; PMed {} alerts", num));
                 }
-            } else {
-                if let Some(expires) = alerts[0].expires {
-                    if adjusted_request_time < timezone.timestamp(expires as _, 0) {
-                        out.push_str(&format!(
-                            "; Alert, severity: {:?} in {:?}; See <{}>",
-                            alerts[0].severity,
-                            &alerts[0].regions,
-                            alerts[0].uri
-                        ));
-                    } else {
-                        trace!(log, "Expired alert");
-                    }
-                } else {
+            } else if let Some(expires) = alerts[0].expires {
+                if adjusted_request_time < timezone.timestamp(expires as _, 0) {
                     out.push_str(&format!(
                         "; Alert, severity: {:?} in {:?}; See <{}>",
                         alerts[0].severity,
                         &alerts[0].regions,
                         alerts[0].uri
                     ));
+                } else {
+                    trace!(log, "Expired alert");
                 }
+            } else {
+                out.push_str(&format!(
+                    "; Alert, severity: {:?} in {:?}; See <{}>",
+                    alerts[0].severity,
+                    &alerts[0].regions,
+                    alerts[0].uri
+                ));
             }
         };
 

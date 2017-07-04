@@ -175,7 +175,12 @@ fn send_tells(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, tells: &[models::P
             t.date,
             t.message
         );
-        super::send_segmented_message(cfg, srv, log, &t.target_nick, &msg, t.channel.is_none());
+        if t.channel.is_some() {
+            super::send_segmented_message(cfg, srv, log, t.channel.as_ref().unwrap(), &msg, false);
+        } else {
+            super::send_segmented_message(cfg, srv, log, &t.target_nick, &msg, false);
+        }
+
     }
 }
 
