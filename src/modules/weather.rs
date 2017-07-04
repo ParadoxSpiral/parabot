@@ -264,9 +264,10 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
             );
             panic!("")
         } else {
+            drop(cache);
+
             let mut body = String::new();
             res.unwrap().read_to_string(&mut body).unwrap();
-
             let json: Value = de::from_str(&body).unwrap();
 
             let status = json.pointer("/info/statuscode").unwrap().as_u64().unwrap();
@@ -281,7 +282,24 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
                     .as_f64()
                     .unwrap() as f32;
 
-                drop(cache);
+                let quality = json.pointer("/results/0/locations/0/geocodeQualityCode")
+                    .unwrap()
+                    .as_str()
+                    .unwrap();
+                trace!(log, "Geocode quality: {}", quality);
+                match &quality[2..] {
+                    "CCC" | "XCC" | "CXC" | "CCX" | "XXC" | "CXX" | "XXX" | "ACC" | "CAC" |
+                    "CCA" | "AXC" | "ACX" | "XAC" | "XCA" | "BCC" | "CBC" | "CCB" | "BXC" |
+                    "BCX" | "XBC" | "XCB" | "XXA" | "XXB" | "AXX" | "BXX" | "XAX" | "XBX" => {
+                        return format!(
+                            "The location does not provide enough information to resolve to \
+                             coordinates with satisfactory precision ({}).",
+                            quality
+                        );
+                    }
+                    _ => {}
+                }
+
                 GEOCODING_CACHE
                     .write()
                     .insert(location.to_lowercase().to_owned(), (lat, lng));
