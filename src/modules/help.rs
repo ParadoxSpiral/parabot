@@ -37,7 +37,7 @@ pub fn handle(cfg: &ServerCfg, target: &str, msg: &str, private: bool) -> String
         }
     } else {
         // Starts with help, e.g. more args
-        match &msg[6..] {
+        match msg[6..].trim() {
             "bots" | ".bots" => {
                 ".bots will (hopefully) cause all bots in the channel to reply.".to_owned()
             }
@@ -60,10 +60,17 @@ pub fn handle(cfg: &ServerCfg, target: &str, msg: &str, private: bool) -> String
             }
             "url" => {
                 unimplemented!();
-                "url fetches urls posted in the channel, and displays their \
-                 metadata, and depending on the website, \
-                 more e.g. youtube views."
+                "url fetches urls posted in the channel and displays their metadata, and, \
+                depending on the website, more e.g. youtube views."
                     .to_owned()
+            }
+            "syncplay" | ".syncplay" => {
+                unimplemented!();
+                "Oi".to_owned()
+            }
+            "remind" | ".remind" => {
+                unimplemented!();
+                "Oi".to_owned()
             }
             _ => "Unknown or undocumented module, sorry.".to_owned(),
         }

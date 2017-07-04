@@ -71,6 +71,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
         Command::ChannelMODE(..) |
         Command::PING(..) |
         Command::PONG(..) |
+        Command::QUIT(..) |
         Command::Response(Response::RPL_TOPICWHOTIME, ..) => trace!(log, "{:?}", msg),
         Command::Raw(ref s, ..) if s == "250" || s == "265" || s == "266" => {
             trace!(log, "{:?}", msg)
@@ -106,9 +107,9 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
 
             // Check if msg is a command, handle command/context modules
             if content.chars().nth(0).unwrap() == COMMAND_MODIFIER {
-                if &content[1..] == "bots" {
+                if &content[1..] == "bots" || &content[1..] == "bot" {
                     trace!(log, "Replying to .bots");
-                    let reply = "Beep boop, I'm a bot!";
+                    let reply = "Beep boop, I'm a bot! For help, try `.help`~";
                     send_segmented_message(cfg, srv, log, reply_target, reply, private);
                 } else if content[1..].starts_with("help") {
                     trace!(log, "Replying to .help");
