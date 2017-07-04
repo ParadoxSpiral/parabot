@@ -73,6 +73,25 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
         Command::PONG(..) |
         Command::QUIT(..) |
         Command::Response(Response::RPL_TOPICWHOTIME, ..) => trace!(log, "{:?}", msg),
+        Command::Response(Response::ERR_NOCHANMODES, ref content, ..) => {
+            // Happens if the bot tries to join a protected channel before registration
+            debug!(
+                log,
+                "Probably joined protected channel {:?} before registration, rejoining",
+                content[1]
+            );
+            if let Some(key) = cfg.channels
+                .iter()
+                .find(|c| c.name == content[1])
+                .unwrap()
+                .password
+                .clone()
+            {
+                srv.send_join_with_keys(&content[1], &key).unwrap();
+            } else {
+                srv.send_join(&content[1]).unwrap();
+            }
+        }
         Command::Raw(ref s, ..) if s == "250" || s == "265" || s == "266" => {
             trace!(log, "{:?}", msg)
         }
@@ -101,33 +120,41 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
         Command::PRIVMSG(ref target, ref content) => {
             debug!(log, "PRIVMSG to {}: {}", target, content);
 
-            let reply_target = msg.response_target().unwrap();
-            // Test if this msg was sent to a channel. When replying, we want to use NOTICE
-            let private = !(target == reply_target);
-
             // Check if msg is a command, handle command/context modules
             if content.chars().nth(0).unwrap() == COMMAND_MODIFIER {
+                let reply_target = msg.response_target().unwrap();
+                let private = !(target == reply_target);
+
                 if &content[1..] == "bots" || &content[1..] == "bot" {
                     trace!(log, "Replying to .bots");
-                    let reply = "Beep boop, I'm a bot! For help, try `.help`~";
-                    send_segmented_message(cfg, srv, log, reply_target, reply, private);
+                    // TODO: Add owner config option
+                    let reply = "I am the slave of ParadoxSpiral… at least 123% safer & faster \
+                                 than m's & l's shit. For a list of commands, try `.help`";
+                    send_segmented_message(cfg, srv, log, reply_target, reply, false);
                 } else if content[1..].starts_with("help") {
                     trace!(log, "Replying to .help");
                     let reply = help::handle(cfg, &*target, content, private);
-                    send_segmented_message(cfg, srv, log, reply_target, &reply, private);
+                    send_segmented_message(
+                        cfg,
+                        srv,
+                        log,
+                        msg.source_nickname().unwrap(),
+                        &reply,
+                        true,
+                    );
                 } else if (private || module_enabled_channel(cfg, &*target, "tell")) &&
                            content[1..].starts_with("tell")
                 {
                     trace!(log, "Starting .tell");
                     let reply = tell::add(cfg, log, &msg, private);
-                    send_segmented_message(cfg, srv, log, reply_target, &reply, private);
+                    send_segmented_message(cfg, srv, log, reply_target, &reply, false);
                 } else if (private || module_enabled_channel(cfg, &*target, "weather")) &&
                            content[1..].starts_with("weather")
                 {
                     trace!(log, "Starting .weather");
                     let nick = msg.source_nickname().unwrap();
                     let reply = weather::handle(cfg, srv, log, &content[8..], nick);
-                    send_segmented_message(cfg, srv, log, reply_target, &reply, private);
+                    send_segmented_message(cfg, srv, log, reply_target, &reply, false);
                 } else {
                     warn!(log, "Unknown command {}", &content[1..]);
                 }
@@ -153,20 +180,20 @@ fn send_segmented_message(
     log: &Logger,
     target: &str,
     msg: &str,
-    private: bool,
+    notice: bool,
 ) {
     let graphemes = UnicodeSegmentation::graphemes(msg, true);
     let msg_bytes = msg.bytes().len();
     // :<hostname> <PRIVMSG|NOTICE> <target> :<message> [potential added escape chars]
     let fix_bytes = 1 + HOSTNAMES.read().get(&cfg.address).unwrap().bytes().len() +
-        1 + if private { 7 } else { 6 } + 1 + target.bytes().len() + 2 + 7;
+        1 + if notice { 6 } else { 7 } + 1 + target.bytes().len() + 2 + 7;
     trace!(log, "Msg bytes: {}; Fix bytes: {}", msg_bytes, fix_bytes);
 
     let send_err = |msg: &str| {
-        if let Err(e) = if private {
-            srv.send_privmsg(target, msg)
-        } else {
+        if let Err(e) = if notice {
             srv.send_notice(target, msg)
+        } else {
+            srv.send_privmsg(target, msg)
         } {
             crit!(log, "Failed to send message to {}: {:?}", target, e)
         };
