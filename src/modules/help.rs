@@ -61,7 +61,7 @@ pub fn handle(cfg: &ServerCfg, target: &str, msg: &str, private: bool) -> String
             "url" => {
                 unimplemented!();
                 "url fetches urls posted in the channel and displays their metadata, and, \
-                depending on the website, more e.g. youtube views."
+                 depending on the website, more e.g. youtube views."
                     .to_owned()
             }
             "syncplay" | ".syncplay" => {

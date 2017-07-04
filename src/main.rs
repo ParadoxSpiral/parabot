@@ -19,6 +19,7 @@
 #![allow(unknown_lints)]
 
 extern crate chrono;
+extern crate chrono_tz;
 extern crate crossbeam;
 extern crate forecast;
 extern crate irc;

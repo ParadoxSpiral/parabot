@@ -15,6 +15,9 @@
 // You should have received a copy of the GNU General Public License
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
+use chrono::Duration;
+use chrono::prelude::*;
+use chrono_tz::Tz;
 use diesel;
 use diesel::prelude::*;
 use forecast::{Alert, ApiResponse, ApiClient, DataPoint, ForecastRequestBuilder, ExcludeBlock,
@@ -363,8 +366,8 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
     res.read_to_string(&mut body).unwrap();
     let res: ApiResponse = de::from_str(&body).unwrap();
 
-    let format_data_point = |out: &mut String, dp: DataPoint| {
-        if let Some(s) = dp.summary {
+    let format_data_point = |out: &mut String, dp: &DataPoint| {
+        if let Some(ref s) = dp.summary {
             out.push_str(&format!("{}: ", s.to_lowercase()));
         }
         if days {
@@ -392,7 +395,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
             }
         }
         if let Some(v) = dp.visibility {
-            out.push_str(&format!("visibility: {}km; ", v));
+            out.push_str(&format!("{}km visibility; ", v));
         }
         if let Some(pp) = dp.precip_probability {
             if pp > 0.049f64 {
@@ -400,49 +403,89 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
                     out.push_str(&format!(
                         "{}% chance of {:?}; ",
                         (pp * 100f64).round(),
-                        dp.precip_type.unwrap()
+                        dp.precip_type.as_ref().unwrap()
                     ));
                 } else {
                     out.push_str(&format!(
                         "{}% chance of {:?}",
                         (pp * 100f64).round(),
-                        dp.precip_type.unwrap()
+                        dp.precip_type.as_ref().unwrap()
                     ));
                 }
             }
         }
         if let Some(wg) = dp.wind_gust {
-            out.push_str(&format!("Wind gusts: {}km/h", wg));
+            out.push_str(&format!("{}km/h wind gusts", wg));
         }
         if let Some(ws) = dp.wind_speed {
             if dp.wind_gust.is_none() {
-                out.push_str(&format!("Wind speed: {}km/h", ws));
+                out.push_str(&format!("{}km/h wind speed", ws));
             } else {
-                out.push_str(&format!(", wind speed: {}km/h", ws));
+                out.push_str(&format!(", {}km/h wind speed", ws));
             }
         }
     };
     let format_alerts =
-        |out: &mut String, alerts: Option<Vec<Alert>>| if let Some(alerts) = alerts {
-            // FIXME: Check if alert expired in rewuested timeframe
-            if alerts.len() > 1 {
-                for (n, a) in alerts.iter().enumerate() {
-                    super::send_segmented_message(cfg, srv, log, nick, &format!(
-                        "{}, severity: {:?} in {:?}; See <{}>; ",
-                        n,
-                        a.severity,
-                        &a.regions,
-                        a.uri
-                    ).trim_right(), true);
-                }                
-                out.push_str(&format!("; PMed {} alerts", alerts.len()));
+        |out: &mut String, alerts: &Option<Vec<Alert>>| if let &Some(ref alerts) = alerts {
+            let utc_now = Utc::now();
+            let timezone: Tz = res.timezone.parse().unwrap();
+            let range_adjustment = if days {
+                Duration::days(range.start as _)
             } else {
-                out.push_str(&format!(
-                    "; Alert, severity: {:?} in {:?}; See <{}>",
-                    alerts[0].severity,
-                    &alerts[0].regions,
-                    alerts[0].uri
-                ));
+                Duration::hours(range.start as _)
+            };
+            let adjusted_request_time = utc_now.with_timezone(&timezone) + range_adjustment;
+            if alerts.len() > 1 {
+                let mut num = 0;
+                for (n, a) in alerts.iter().enumerate() {
+                    let mut expired = false;
+                    if let Some(expires) = a.expires {
+                        if adjusted_request_time > timezone.timestamp(expires as _, 0) {
+                            expired = true;
+                            trace!(log, "Expired alert");
+                        }
+                    }
+                    if !expired {
+                        num += 1;
+                        super::send_segmented_message(
+                            cfg,
+                            srv,
+                            log,
+                            nick,
+                            &format!(
+                                "{}, severity: {:?} in {:?}; See <{}>; ",
+                                n,
+                                a.severity,
+                                &a.regions,
+                                a.uri
+                            ).trim_right(),
+                            true,
+                        );
+                    }
+                }
+                if num != 0 {
+                    out.push_str(&format!("; PMed {} alerts", num));
+                }
+            } else {
+                if let Some(expires) = alerts[0].expires {
+                    if adjusted_request_time < timezone.timestamp(expires as _, 0) {
+                        out.push_str(&format!(
+                            "; Alert, severity: {:?} in {:?}; See <{}>",
+                            alerts[0].severity,
+                            &alerts[0].regions,
+                            alerts[0].uri
+                        ));
+                    } else {
+                        trace!(log, "Expired alert");
+                    }
+                } else {
+                    out.push_str(&format!(
+                        "; Alert, severity: {:?} in {:?}; See <{}>",
+                        alerts[0].severity,
+                        &alerts[0].regions,
+                        alerts[0].uri
+                    ));
+                }
             }
         };
 
@@ -450,29 +493,29 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
     if range.start == range.end && range.start == 0 {
         let data;
         if days {
-            data = res.daily.unwrap().data[0].clone();
+            data = &res.daily.as_ref().unwrap().data[0];
             formatted.push_str(&format!("Today's weather in {} is ", location));
-            format_data_point(&mut formatted, data);
+            format_data_point(&mut formatted, &data);
         } else {
-            data = res.currently.unwrap();
+            data = res.currently.as_ref().unwrap();
             formatted.push_str(&format!("Current weather in {} is ", location));
-            format_data_point(&mut formatted, data);
+            format_data_point(&mut formatted, &data);
         }
     } else if range.start == range.end {
         let data;
         if days {
-            data = res.daily.unwrap().data[range.start].clone();
+            data = &res.daily.as_ref().unwrap().data[range.start];
             formatted.push_str(&format!("Weather in {}d in {} is ", range.start, location));
-            format_data_point(&mut formatted, data);
+            format_data_point(&mut formatted, &data);
         } else {
-            data = res.hourly.unwrap().data[range.start].clone();
+            data = &res.hourly.as_ref().unwrap().data[range.start];
             formatted.push_str(&format!("Weather in {}h in {} is ", range.start, location));
-            format_data_point(&mut formatted, data);
+            format_data_point(&mut formatted, &data);
         }
     } else {
         let data;
         if hours {
-            data = res.hourly.unwrap();
+            data = res.hourly.as_ref().unwrap();
             formatted.push_str(&format!(
                 "Weather in the next {}-{}h in {}: ",
                 range.start,
@@ -480,7 +523,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
                 location
             ));
         } else {
-            data = res.daily.unwrap();
+            data = res.daily.as_ref().unwrap();
             formatted.push_str(&format!(
                 "Weather in the next {}-{}d in {}: ",
                 range.start,
@@ -494,13 +537,13 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
             .enumerate()
         {
             formatted.push_str(&format!("\x02{}:\x02 ", n + range.start));
-            format_data_point(&mut formatted, data);
+            format_data_point(&mut formatted, &data);
             if n + range.start != range.end {
                 formatted.push_str("--- ");
             }
         }
     }
-    format_alerts(&mut formatted, res.alerts);
+    format_alerts(&mut formatted, &res.alerts);
 
     formatted
 }
