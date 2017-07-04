@@ -184,6 +184,8 @@ fn send_segmented_message(
             // TODO: Is there any better way to do this?
             // For magic values see  https://stackoverflow.com/questions/1391610/embed-mirc-color-
             // codes-into-a-c-sharp-literal/13382032#13382032
+            // FIXME: This is actually broken for color, because we don't insert the specific color
+            // code again
             if g == "\x02" {
                 if unescaped_controls[0] {
                     unescaped_controls[0] = false;

@@ -15,6 +15,9 @@
 // You should have received a copy of the GNU General Public License
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
+use chrono::Duration;
+use chrono::prelude::*;
+use chrono_tz::Tz;
 use diesel;
 use diesel::prelude::*;
 use forecast::{Alert, ApiResponse, ApiClient, DataPoint, ForecastRequestBuilder, ExcludeBlock,
@@ -38,12 +41,13 @@ use schema::location_cache::dsl as lc_dsl;
 use schema::geocode_cache::dsl as gc_dsl;
 
 const GEOCODING_API_BASE: &str = "http://www.mapquestapi.com/geocoding/v1/address";
+const REVERSE_GEOCODING_API_BASE: &str = "http://www.mapquestapi.com/geocoding/v1/reverse";
 
 lazy_static!{
     static ref LOCATION_CACHE: RwLock<HashMap<(String, String), String>> = {
         RwLock::new(HashMap::new())
     };
-    static ref GEOCODING_CACHE: RwLock<HashMap<String, (f32, f32)>> = {
+    static ref GEOCODING_CACHE: RwLock<HashMap<String, (f32, f32, String)>> = {
         RwLock::new(HashMap::new())
     };
 }
@@ -85,7 +89,7 @@ pub fn init(cfg: &Config, log: &Logger) {
         } else {
             debug!(log, "Geocode cache: {:?}", geocodes.as_ref().unwrap());
             for g in geocodes.unwrap() {
-                gc.insert(g.location.clone(), (g.latitude, g.longitude));
+                gc.insert(g.location.clone(), (g.latitude, g.longitude, g.reverse_location));
             }
             gc.shrink_to_fit();
         };
@@ -226,12 +230,17 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
 
     // Try to get geocode for location from cache, or request from API
     let cache = GEOCODING_CACHE.read();
-    let (latitude, longitude, client) = if let Some(&(lat, lng)) =
-        cache.get(&location.to_lowercase())
+    let (latitude, longitude, reverse_location, client) = if let Some((lat, lng, revl)) =
+    cache.get(&location.to_lowercase()).cloned()
     {
-        drop(cache);
-        trace!(log, "Got geocode from cache: lat: {}; lng: {}", lat, lng);
-        (lat, lng, None)
+        trace!(
+            log,
+            "Got geocode from cache: lat: {}; lng: {}, revl: {}",
+            lat,
+            lng,
+            revl
+        );
+        (lat, lng, revl.clone(), None)
     } else {
         let reqwest_client = Client::new();
         let reqwest_client = if let Err(e) = reqwest_client {
@@ -261,9 +270,10 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
             );
             panic!("")
         } else {
+            drop(cache);
+
             let mut body = String::new();
             res.unwrap().read_to_string(&mut body).unwrap();
-
             let json: Value = de::from_str(&body).unwrap();
 
             let status = json.pointer("/info/statuscode").unwrap().as_u64().unwrap();
@@ -278,10 +288,70 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
                     .as_f64()
                     .unwrap() as f32;
 
-                drop(cache);
+                let quality = json.pointer("/results/0/locations/0/geocodeQualityCode")
+                    .unwrap()
+                    .as_str()
+                    .unwrap();
+                trace!(log, "Geocode quality: {}", quality);
+                match &quality[2..] {
+                    "CCC" | "XCC" | "CXC" | "CCX" | "XXC" | "CXX" | "XXX" => {
+                        return format!(
+                            "The location does not provide enough information to resolve to \
+                             coordinates with satisfactory precision ({}).",
+                            quality
+                        );
+                    }
+                    _ => {}
+                }
+
+                // Reverse geocode lookup to get location to reply with
+                let res = reqwest_client
+                    .get(&format!(
+                        "{}?key={}&location={},{}",
+                        REVERSE_GEOCODING_API_BASE,
+                        cfg.geocoding_key.as_ref().unwrap(),
+                        lat,
+                        lng
+                    ))
+                    .header(AcceptEncoding(vec![qitem(Encoding::Gzip)]))
+                    .send();
+                let revl = if let Err(e) = res {
+                    crit!(log, "Failed to query reverse geocoding API: {}", e);
+                    panic!("")
+                } else if !res.as_ref().unwrap().status().is_success() {
+                    crit!(
+                        log,
+                        "Failed to query reverse geocoding API: {}",
+                        res.unwrap().status()
+                    );
+                    panic!("")
+                } else {
+                    let mut body = String::new();
+                    res.unwrap().read_to_string(&mut body).unwrap();
+                    let json: Value = de::from_str(&body).unwrap();
+
+                    let city = json.pointer("/results/0/locations/0/adminArea5").unwrap().as_str().unwrap();
+                    let county = json.pointer("/results/0/locations/0/adminArea4").unwrap().as_str().unwrap();
+                    let state = json.pointer("/results/0/locations/0/adminArea3").unwrap().as_str().unwrap();
+                    let country = json.pointer("/results/0/locations/0/adminArea1").unwrap().as_str().unwrap();
+                    let mut out = String::new();
+                    if city != "" {
+                        out.push_str(&format!("{}, ", city));
+                    }
+                    if state != "" {
+                        out.push_str(&format!("{}, ", state));
+                    } else if county != "" {
+                        out.push_str(&format!("{}, ", county));
+                    }
+                    if country != "" {
+                        out.push_str(&format!("{}", country));
+                    }
+                    out
+                };
+
                 GEOCODING_CACHE
                     .write()
-                    .insert(location.to_lowercase().to_owned(), (lat, lng));
+                    .insert(location.to_lowercase().to_owned(), (lat, lng, revl.clone()));
 
                 let conn = conn.or_else(|| Some(super::establish_database_connection(cfg, log)))
                     .unwrap();
@@ -289,6 +359,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
                     location: &location.to_lowercase(),
                     latitude: lat,
                     longitude: lng,
+                    reverse_location: &revl.clone(),
                 };
                 if let Err(e) = diesel::insert(&new)
                     .into(schema::geocode_cache::table)
@@ -298,7 +369,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
                 }
 
                 trace!(log, "Got geocode from API: lat: {}; lng: {}", lat, lng);
-                (lat, lng, Some(reqwest_client))
+                (lat, lng, revl, Some(reqwest_client))
             } else if status == 403 {
                 crit!(
                     log,
@@ -363,8 +434,8 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
     res.read_to_string(&mut body).unwrap();
     let res: ApiResponse = de::from_str(&body).unwrap();
 
-    let format_data_point = |out: &mut String, dp: DataPoint| {
-        if let Some(s) = dp.summary {
+    let format_data_point = |out: &mut String, dp: &DataPoint| {
+        if let Some(ref s) = dp.summary {
             out.push_str(&format!("{}: ", s.to_lowercase()));
         }
         if days {
@@ -392,7 +463,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
             }
         }
         if let Some(v) = dp.visibility {
-            out.push_str(&format!("visibility: {}km; ", v));
+            out.push_str(&format!("{}km visibility; ", v));
         }
         if let Some(pp) = dp.precip_probability {
             if pp > 0.049f64 {
@@ -400,49 +471,89 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
                     out.push_str(&format!(
                         "{}% chance of {:?}; ",
                         (pp * 100f64).round(),
-                        dp.precip_type.unwrap()
+                        dp.precip_type.as_ref().unwrap()
                     ));
                 } else {
                     out.push_str(&format!(
                         "{}% chance of {:?}",
                         (pp * 100f64).round(),
-                        dp.precip_type.unwrap()
+                        dp.precip_type.as_ref().unwrap()
                     ));
                 }
             }
         }
         if let Some(wg) = dp.wind_gust {
-            out.push_str(&format!("Wind gusts: {}km/h", wg));
+            out.push_str(&format!("{}km/h wind gusts", wg));
         }
         if let Some(ws) = dp.wind_speed {
             if dp.wind_gust.is_none() {
-                out.push_str(&format!("Wind speed: {}km/h", ws));
+                out.push_str(&format!("{}km/h wind speed", ws));
             } else {
-                out.push_str(&format!(", wind speed: {}km/h", ws));
+                out.push_str(&format!(", {}km/h wind speed", ws));
             }
         }
     };
     let format_alerts =
-        |out: &mut String, alerts: Option<Vec<Alert>>| if let Some(alerts) = alerts {
-            // FIXME: Check if alert expired in rewuested timeframe
-            if alerts.len() > 1 {
-                for (n, a) in alerts.iter().enumerate() {
-                    super::send_segmented_message(cfg, srv, log, nick, &format!(
-                        "{}, severity: {:?} in {:?}; See <{}>; ",
-                        n,
-                        a.severity,
-                        &a.regions,
-                        a.uri
-                    ).trim_right(), true);
-                }                
-                out.push_str(&format!("; PMed {} alerts", alerts.len()));
+        |out: &mut String, alerts: &Option<Vec<Alert>>| if let &Some(ref alerts) = alerts {
+            let utc_now = Utc::now();
+            let timezone: Tz = res.timezone.parse().unwrap();
+            let range_adjustment = if days {
+                Duration::days(range.start as _)
             } else {
-                out.push_str(&format!(
-                    "; Alert, severity: {:?} in {:?}; See <{}>",
-                    alerts[0].severity,
-                    &alerts[0].regions,
-                    alerts[0].uri
-                ));
+                Duration::hours(range.start as _)
+            };
+            let adjusted_request_time = utc_now.with_timezone(&timezone) + range_adjustment;
+            if alerts.len() > 1 {
+                let mut num = 0;
+                for (n, a) in alerts.iter().enumerate() {
+                    let mut expired = false;
+                    if let Some(expires) = a.expires {
+                        if adjusted_request_time > timezone.timestamp(expires as _, 0) {
+                            expired = true;
+                            trace!(log, "Expired alert");
+                        }
+                    }
+                    if !expired {
+                        num += 1;
+                        super::send_segmented_message(
+                            cfg,
+                            srv,
+                            log,
+                            nick,
+                            &format!(
+                                "{}, severity: {:?} in {:?}; See <{}>; ",
+                                n,
+                                a.severity,
+                                &a.regions,
+                                a.uri
+                            ).trim_right(),
+                            true,
+                        );
+                    }
+                }
+                if num != 0 {
+                    out.push_str(&format!("; PMed {} alerts", num));
+                }
+            } else {
+                if let Some(expires) = alerts[0].expires {
+                    if adjusted_request_time < timezone.timestamp(expires as _, 0) {
+                        out.push_str(&format!(
+                            "; Alert, severity: {:?} in {:?}; See <{}>",
+                            alerts[0].severity,
+                            &alerts[0].regions,
+                            alerts[0].uri
+                        ));
+                    } else {
+                        trace!(log, "Expired alert");
+                    }
+                } else {
+                    out.push_str(&format!(
+                        "; Alert, severity: {:?} in {:?}; See <{}>",
+                        alerts[0].severity,
+                        &alerts[0].regions,
+                        alerts[0].uri
+                    ));
+                }
             }
         };
 
@@ -450,42 +561,50 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
     if range.start == range.end && range.start == 0 {
         let data;
         if days {
-            data = res.daily.unwrap().data[0].clone();
-            formatted.push_str(&format!("Today's weather in {} is ", location));
-            format_data_point(&mut formatted, data);
+            data = &res.daily.as_ref().unwrap().data[0];
+            formatted.push_str(&format!("Today's weather in {} is ", reverse_location));
+            format_data_point(&mut formatted, &data);
         } else {
-            data = res.currently.unwrap();
-            formatted.push_str(&format!("Current weather in {} is ", location));
-            format_data_point(&mut formatted, data);
+            data = res.currently.as_ref().unwrap();
+            formatted.push_str(&format!("Current weather in {} is ", reverse_location));
+            format_data_point(&mut formatted, &data);
         }
     } else if range.start == range.end {
         let data;
         if days {
-            data = res.daily.unwrap().data[range.start].clone();
-            formatted.push_str(&format!("Weather in {}d in {} is ", range.start, location));
-            format_data_point(&mut formatted, data);
+            data = &res.daily.as_ref().unwrap().data[range.start];
+            formatted.push_str(&format!(
+                "Weather in {}d in {} is ",
+                range.start,
+                reverse_location
+            ));
+            format_data_point(&mut formatted, &data);
         } else {
-            data = res.hourly.unwrap().data[range.start].clone();
-            formatted.push_str(&format!("Weather in {}h in {} is ", range.start, location));
-            format_data_point(&mut formatted, data);
+            data = &res.hourly.as_ref().unwrap().data[range.start];
+            formatted.push_str(&format!(
+                "Weather in {}h in {} is ",
+                range.start,
+                reverse_location
+            ));
+            format_data_point(&mut formatted, &data);
         }
     } else {
         let data;
         if hours {
-            data = res.hourly.unwrap();
+            data = res.hourly.as_ref().unwrap();
             formatted.push_str(&format!(
                 "Weather in the next {}-{}h in {}: ",
                 range.start,
                 range.end,
-                location
+                reverse_location
             ));
         } else {
-            data = res.daily.unwrap();
+            data = res.daily.as_ref().unwrap();
             formatted.push_str(&format!(
                 "Weather in the next {}-{}d in {}: ",
                 range.start,
                 range.end,
-                location
+                reverse_location
             ));
         }
         for (n, data) in data.data[range.start...range.end]
@@ -494,13 +613,13 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
             .enumerate()
         {
             formatted.push_str(&format!("\x02{}:\x02 ", n + range.start));
-            format_data_point(&mut formatted, data);
+            format_data_point(&mut formatted, &data);
             if n + range.start != range.end {
                 formatted.push_str("--- ");
             }
         }
     }
-    format_alerts(&mut formatted, res.alerts);
+    format_alerts(&mut formatted, &res.alerts);
 
     formatted
 }
