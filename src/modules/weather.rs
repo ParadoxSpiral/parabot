@@ -41,12 +41,13 @@ use schema::location_cache::dsl as lc_dsl;
 use schema::geocode_cache::dsl as gc_dsl;
 
 const GEOCODING_API_BASE: &str = "http://www.mapquestapi.com/geocoding/v1/address";
+const REVERSE_GEOCODING_API_BASE: &str = "http://www.mapquestapi.com/geocoding/v1/reverse";
 
 lazy_static!{
     static ref LOCATION_CACHE: RwLock<HashMap<(String, String), String>> = {
         RwLock::new(HashMap::new())
     };
-    static ref GEOCODING_CACHE: RwLock<HashMap<String, (f32, f32)>> = {
+    static ref GEOCODING_CACHE: RwLock<HashMap<String, (f32, f32, String)>> = {
         RwLock::new(HashMap::new())
     };
 }
@@ -88,7 +89,7 @@ pub fn init(cfg: &Config, log: &Logger) {
         } else {
             debug!(log, "Geocode cache: {:?}", geocodes.as_ref().unwrap());
             for g in geocodes.unwrap() {
-                gc.insert(g.location.clone(), (g.latitude, g.longitude));
+                gc.insert(g.location.clone(), (g.latitude, g.longitude, g.reverse_location));
             }
             gc.shrink_to_fit();
         };
@@ -229,12 +230,17 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
 
     // Try to get geocode for location from cache, or request from API
     let cache = GEOCODING_CACHE.read();
-    let (latitude, longitude, client) = if let Some(&(lat, lng)) =
-        cache.get(&location.to_lowercase())
+    let (latitude, longitude, reverse_location, client) = if let Some((lat, lng, revl)) =
+    cache.get(&location.to_lowercase()).cloned()
     {
-        drop(cache);
-        trace!(log, "Got geocode from cache: lat: {}; lng: {}", lat, lng);
-        (lat, lng, None)
+        trace!(
+            log,
+            "Got geocode from cache: lat: {}; lng: {}, revl: {}",
+            lat,
+            lng,
+            revl
+        );
+        (lat, lng, revl.clone(), None)
     } else {
         let reqwest_client = Client::new();
         let reqwest_client = if let Err(e) = reqwest_client {
@@ -288,9 +294,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
                     .unwrap();
                 trace!(log, "Geocode quality: {}", quality);
                 match &quality[2..] {
-                    "CCC" | "XCC" | "CXC" | "CCX" | "XXC" | "CXX" | "XXX" | "ACC" | "CAC" |
-                    "CCA" | "AXC" | "ACX" | "XAC" | "XCA" | "BCC" | "CBC" | "CCB" | "BXC" |
-                    "BCX" | "XBC" | "XCB" | "XXA" | "XXB" | "AXX" | "BXX" | "XAX" | "XBX" => {
+                    "CCC" | "XCC" | "CXC" | "CCX" | "XXC" | "CXX" | "XXX" => {
                         return format!(
                             "The location does not provide enough information to resolve to \
                              coordinates with satisfactory precision ({}).",
@@ -300,9 +304,54 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
                     _ => {}
                 }
 
+                // Reverse geocode lookup to get location to reply with
+                let res = reqwest_client
+                    .get(&format!(
+                        "{}?key={}&location={},{}",
+                        REVERSE_GEOCODING_API_BASE,
+                        cfg.geocoding_key.as_ref().unwrap(),
+                        lat,
+                        lng
+                    ))
+                    .header(AcceptEncoding(vec![qitem(Encoding::Gzip)]))
+                    .send();
+                let revl = if let Err(e) = res {
+                    crit!(log, "Failed to query reverse geocoding API: {}", e);
+                    panic!("")
+                } else if !res.as_ref().unwrap().status().is_success() {
+                    crit!(
+                        log,
+                        "Failed to query reverse geocoding API: {}",
+                        res.unwrap().status()
+                    );
+                    panic!("")
+                } else {
+                    let mut body = String::new();
+                    res.unwrap().read_to_string(&mut body).unwrap();
+                    let json: Value = de::from_str(&body).unwrap();
+
+                    let city = json.pointer("/results/0/locations/0/adminArea5").unwrap().as_str().unwrap();
+                    let county = json.pointer("/results/0/locations/0/adminArea4").unwrap().as_str().unwrap();
+                    let state = json.pointer("/results/0/locations/0/adminArea3").unwrap().as_str().unwrap();
+                    let country = json.pointer("/results/0/locations/0/adminArea1").unwrap().as_str().unwrap();
+                    let mut out = String::new();
+                    if city != "" {
+                        out.push_str(&format!("{}, ", city));
+                    }
+                    if state != "" {
+                        out.push_str(&format!("{}, ", state));
+                    } else if county != "" {
+                        out.push_str(&format!("{}, ", county));
+                    }
+                    if country != "" {
+                        out.push_str(&format!("{}", country));
+                    }
+                    out
+                };
+
                 GEOCODING_CACHE
                     .write()
-                    .insert(location.to_lowercase().to_owned(), (lat, lng));
+                    .insert(location.to_lowercase().to_owned(), (lat, lng, revl.clone()));
 
                 let conn = conn.or_else(|| Some(super::establish_database_connection(cfg, log)))
                     .unwrap();
@@ -310,6 +359,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
                     location: &location.to_lowercase(),
                     latitude: lat,
                     longitude: lng,
+                    reverse_location: &revl.clone(),
                 };
                 if let Err(e) = diesel::insert(&new)
                     .into(schema::geocode_cache::table)
@@ -319,7 +369,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
                 }
 
                 trace!(log, "Got geocode from API: lat: {}; lng: {}", lat, lng);
-                (lat, lng, Some(reqwest_client))
+                (lat, lng, revl, Some(reqwest_client))
             } else if status == 403 {
                 crit!(
                     log,
@@ -512,22 +562,30 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
         let data;
         if days {
             data = &res.daily.as_ref().unwrap().data[0];
-            formatted.push_str(&format!("Today's weather in {} is ", location));
+            formatted.push_str(&format!("Today's weather in {} is ", reverse_location));
             format_data_point(&mut formatted, &data);
         } else {
             data = res.currently.as_ref().unwrap();
-            formatted.push_str(&format!("Current weather in {} is ", location));
+            formatted.push_str(&format!("Current weather in {} is ", reverse_location));
             format_data_point(&mut formatted, &data);
         }
     } else if range.start == range.end {
         let data;
         if days {
             data = &res.daily.as_ref().unwrap().data[range.start];
-            formatted.push_str(&format!("Weather in {}d in {} is ", range.start, location));
+            formatted.push_str(&format!(
+                "Weather in {}d in {} is ",
+                range.start,
+                reverse_location
+            ));
             format_data_point(&mut formatted, &data);
         } else {
             data = &res.hourly.as_ref().unwrap().data[range.start];
-            formatted.push_str(&format!("Weather in {}h in {} is ", range.start, location));
+            formatted.push_str(&format!(
+                "Weather in {}h in {} is ",
+                range.start,
+                reverse_location
+            ));
             format_data_point(&mut formatted, &data);
         }
     } else {
@@ -538,7 +596,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
                 "Weather in the next {}-{}h in {}: ",
                 range.start,
                 range.end,
-                location
+                reverse_location
             ));
         } else {
             data = res.daily.as_ref().unwrap();
@@ -546,7 +604,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &str, nick: &
                 "Weather in the next {}-{}d in {}: ",
                 range.start,
                 range.end,
-                location
+                reverse_location
             ));
         }
         for (n, data) in data.data[range.start...range.end]

@@ -58,6 +58,7 @@ pub struct Geocode {
     pub location: String,
     pub latitude: f32,
     pub longitude: f32,
+    pub reverse_location: String,
 }
 
 #[derive(Debug, Insertable)]
@@ -66,4 +67,5 @@ pub struct NewGeocode<'a> {
     pub location: &'a str,
     pub latitude: f32,
     pub longitude: f32,
+    pub reverse_location: &'a str,
 }
