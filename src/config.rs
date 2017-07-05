@@ -21,6 +21,8 @@ use toml::de;
 
 use std::collections::HashMap;
 
+use errors::*;
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
@@ -58,24 +60,23 @@ pub struct ChannelCfg {
     pub modules: Vec<String>,
 }
 
-// This unidiomatically does not use TryFrom, because of the way we do error handling
-impl<'a> From<&'a ServerCfg> for IrcServer {
-    fn from(srv: &'a ServerCfg) -> IrcServer {
-        let srv = IrcServer::from_config(IrcConfig {
-            nickname: Some(srv.nickname.clone()),
-            alt_nicks: srv.alt_nicknames.clone(),
-            nick_password: Some(srv.nick_password.clone()),
-            server: Some(srv.address.clone()),
-            port: Some(srv.port),
-            password: srv.server_password.clone(),
+impl ServerCfg {
+    pub fn new_ircserver(&self) -> Result<IrcServer> {
+        Ok(IrcServer::from_config(IrcConfig {
+            nickname: Some(self.nickname.clone()),
+            alt_nicks: self.alt_nicknames.clone(),
+            nick_password: Some(self.nick_password.clone()),
+            server: Some(self.address.clone()),
+            port: Some(self.port),
+            password: self.server_password.clone(),
             use_ssl: Some(true),
-            channels: Some(srv.channels.iter().map(|c| c.name.clone()).collect()),
+            channels: Some(self.channels.iter().map(|c| c.name.clone()).collect()),
             channel_keys: {
-                if srv.channels.iter().all(|c| c.password.is_none()) {
+                if self.channels.iter().all(|c| c.password.is_none()) {
                     None
                 } else {
-                    let mut hm = HashMap::with_capacity(srv.channels.len());
-                    for c in &srv.channels {
+                    let mut hm = HashMap::with_capacity(self.channels.len());
+                    for c in &self.channels {
                         if c.password.is_some() {
                             hm.insert(c.name.clone(), c.password.as_ref().unwrap().clone());
                         }
@@ -84,8 +85,8 @@ impl<'a> From<&'a ServerCfg> for IrcServer {
                     Some(hm)
                 }
             },
-            max_messages_in_burst: srv.max_burst_messages,
-            burst_window_length: srv.burst_window_length,
+            max_messages_in_burst: self.max_burst_messages,
+            burst_window_length: self.burst_window_length,
             encoding: Some("UTF-8".to_owned()),
             should_ghost: Some(true),
             version: Some(format!(
@@ -95,43 +96,25 @@ impl<'a> From<&'a ServerCfg> for IrcServer {
             )),
             source: Some("https://github.com/ParadoxSpiral/parabot".into()),
             ..Default::default()
-        });
-        match srv {
-            Err(e) => {
-                crit!(::SLOG_ROOT, "IrcServer creation failed: {:?}", e);
-                panic!("IrcServer creation failed: {:?}", e)
-            }
-            Ok(srv) => srv,
-        }
+        })?)
     }
 }
 
-pub fn parse_config(input: &str) -> Config {
-    let de = de::from_str(input);
-    // Why does the type not get inferred
-    let ret: Config = if de.is_err() {
-        crit!(::SLOG_ROOT, "Failed to parse config file: {:?}", de);
-        panic!("Failed to parse config file: {:?}", de)
-    } else {
-        de.unwrap()
-    };
+pub fn parse_config(input: &str) -> Result<Config> {
+    let ret: Result<Config> = de::from_str::<Config>(input)
+        .or_else(|err| Err(ErrorKind::Serialization(err).into()));
+    let ret = ret?;
     for srv in &ret.servers {
         if (srv.weather_secret.is_none() || srv.geocoding_key.is_none()) &&
             srv.channels
                 .iter()
                 .any(|c| c.modules.iter().any(|m| m == "weather"))
         {
-            crit!(
-                ::SLOG_ROOT,
+            return Err(format!(
                 "Weather modules enabled on {:?}, but no weather API secret or geocoding key given",
                 &srv.address
-            );
-            panic!(
-                "Weather modules enabled on {:?}, but no weather API secret or geocoding key given",
-                &srv.address
-            );
+            ).into());
         }
     }
-
-    ret
+    Ok(ret)
 }
