@@ -25,10 +25,12 @@ use slog::Logger;
 use std::collections::HashMap;
 
 use config::{Config, ServerCfg};
+use errors::*;
 use models;
 use schema;
 use schema::pending_tells::dsl;
 
+// TODO: Switch to proper cache
 lazy_static!{
     static ref PENDING_TELLS_HM: Mutex<HashMap<String, Mutex<usize>>> = {
         Mutex::new(HashMap::new())
@@ -36,78 +38,78 @@ lazy_static!{
 }
 
 // Read DB to get init values
-pub fn init(cfg: &Config, log: &Logger) {
+pub fn init(cfg: &Config, log: &Logger) -> Result<()> {
     let mut hm = PENDING_TELLS_HM.lock();
     for srv in &cfg.servers {
-        let conn = super::establish_database_connection(srv, log);
+        let conn = super::establish_database_connection(srv, log)?;
         let tells = dsl::pending_tells
             .filter(dsl::server_addr.eq(&srv.address))
-            .load::<models::PendingTell>(&conn);
-        if tells.is_err() {
-            crit!(
-                log,
-                "Failed to load pending tells: {:?}",
-                tells.as_ref().unwrap_err()
-            );
-            panic!("Failed to load pending tells: {:?}", tells.unwrap_err())
-        } else {
-            debug!(log, "Pending tells: {:?}", tells.as_ref().unwrap());
-            hm.insert(srv.address.clone(), Mutex::new(tells.unwrap().len()));
-            hm.shrink_to_fit();
-        }
+            .load::<models::PendingTell>(&conn)?;
+        debug!(log, "Pending tells: {:?}", &tells);
+        hm.insert(srv.address.clone(), Mutex::new(tells.len()));
+        hm.shrink_to_fit();
     }
+    Ok(())
 }
 
-pub fn handle_user_join(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) {
+pub fn handle_user_join(
+    cfg: &ServerCfg,
+    srv: &IrcServer,
+    log: &Logger,
+    msg: &Message,
+) -> Result<()> {
     let hm = PENDING_TELLS_HM.lock();
     let mut pending = hm.get(&cfg.address).unwrap().lock();
     if *pending != 0 {
         if let Command::JOIN(ref chan, ..) = msg.command {
             let target_nick = msg.source_nickname().unwrap();
 
-            let conn = super::establish_database_connection(cfg, log);
+            let conn = super::establish_database_connection(cfg, log)?;
             let tells = dsl::pending_tells
                 .filter(dsl::server_addr.eq(&cfg.address))
                 .filter(dsl::target_nick.eq(&target_nick))
                 .filter(dsl::channel.eq(&*chan).or(dsl::channel.is_null()))
-                .load::<models::PendingTell>(&conn);
-            let tells = if let Err(e) = tells {
-                crit!(log, "Failed to load pending tells: {:?}", e);
-                panic!("")
-            } else {
-                tells.unwrap()
-            };
+                .load::<models::PendingTell>(&conn)
+                .or_else(|err| {
+                    crit!(log, "Failed to load pending tells: {:?}", err);
+                    Err(err)
+                })?;
 
             *pending -= 1;
             drop(pending);
             debug!(log, "Found pending tells: {:?}", tells);
 
-            if let Err(e) = diesel::delete(
+            diesel::delete(
                 dsl::pending_tells
                     .filter(dsl::server_addr.eq(&cfg.address))
                     .filter(dsl::target_nick.eq(&target_nick))
                     .filter(dsl::channel.eq(&*chan).or(dsl::channel.is_null())),
             ).execute(&conn)
-            {
-                crit!(log, "Failed to delete tells: {:?}", e);
-                let res = srv.send_privmsg(
-                    target_nick,
-                    "You have some pending tells, but I failed \
-                     at a step. Try rejoining, or notifying my owner.",
-                );
-                if let Err(e) = res {
-                    crit!(log, "Failed to send message to {}: {}", &target_nick, e);
-                }
-            }
+                .or_else(|err| {
+                    crit!(log, "Failed to delete tells: {:?}", err);
+                    srv.send_privmsg(
+                        target_nick,
+                        "You have some pending tells, but I failed. \
+                         Try rejoining, or notifying my owner.",
+                    )?;
 
-            send_tells(cfg, srv, log, &tells);
+                    Err(ErrorKind::Diesel(err).into())
+                })
+                .and_then(|_| send_tells(cfg, srv, log, &tells))
         } else {
             unreachable!()
         }
+    } else {
+        Ok(())
     }
 }
 
-pub fn handle_names_reply(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) {
+pub fn handle_names_reply(
+    cfg: &ServerCfg,
+    srv: &IrcServer,
+    log: &Logger,
+    msg: &Message,
+) -> Result<()> {
     let hm = PENDING_TELLS_HM.lock();
     let mut pending = hm.get(&cfg.address).unwrap().lock();
     if *pending != 0 {
@@ -122,51 +124,52 @@ pub fn handle_names_reply(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &
                 .map(|u| u.replace('@', "").replace('+', ""))
                 .collect::<Vec<_>>();
 
-            let conn = super::establish_database_connection(cfg, log);
+            let conn = super::establish_database_connection(cfg, log)?;
             let tells = dsl::pending_tells
                 .filter(dsl::server_addr.eq(&cfg.address))
                 .filter(dsl::target_nick.eq_any(&target_nicks))
                 .filter(dsl::channel.eq(&*chan).or(dsl::channel.is_null()))
-                .load::<models::PendingTell>(&conn);
-            let tells = if let Err(e) = tells {
-                crit!(log, "Failed to load pending tells: {:?}", e);
-                panic!("")
-            } else {
-                tells.unwrap()
-            };
+                .load::<models::PendingTell>(&conn)
+                .or_else(|err| {
+                    crit!(log, "Failed to load pending tells: {:?}", err);
+                    Err(err)
+                })?;
             *pending -= tells.len();
             drop(pending);
             debug!(log, "Found pending tells: {:?}", tells);
 
-            if let Err(e) = diesel::delete(
+            diesel::delete(
                 dsl::pending_tells
                     .filter(dsl::server_addr.eq(&cfg.address))
                     .filter(dsl::target_nick.eq_any(&target_nicks))
                     .filter(dsl::channel.eq(&*chan).or(dsl::channel.is_null())),
             ).execute(&conn)
-            {
-                crit!(log, "Failed to delete tells: {:?}", e);
-                for nick in &target_nicks {
-                    let res = srv.send_privmsg(
-                        nick,
-                        "You have some pending tells, but I failed \
-                         at a step. Try rejoining, or notifying my owner.",
-                    );
-                    if let Err(e) = res {
-                        crit!(log, "Failed to send message to {}: {}", nick, e);
+                .or_else(|err| {
+                    for target_nick in target_nicks {
+                        crit!(log, "Failed to delete tells: {:?}", err);
+                        srv.send_privmsg(
+                            &target_nick,
+                            "You have some pending tells, but I failed. \
+                             Try rejoining, or notifying my owner.",
+                        )?;
                     }
-                }
-                panic!("");
-            }
-
-            send_tells(cfg, srv, log, &tells);
+                    Err(ErrorKind::Diesel(err).into())
+                })
+                .and_then(|_| send_tells(cfg, srv, log, &tells))
         } else {
             unreachable!()
         }
+    } else {
+        Ok(())
     }
 }
 
-fn send_tells(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, tells: &[models::PendingTell]) {
+fn send_tells(
+    cfg: &ServerCfg,
+    srv: &IrcServer,
+    log: &Logger,
+    tells: &[models::PendingTell],
+) -> Result<()> {
     for t in tells {
         let msg = format!(
             "{}: {} wanted to tell you on {} UTC: {}",
@@ -176,15 +179,15 @@ fn send_tells(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, tells: &[models::P
             t.message
         );
         if t.channel.is_some() {
-            super::send_segmented_message(cfg, srv, log, t.channel.as_ref().unwrap(), &msg, false);
+            super::send_segmented_message(cfg, srv, log, t.channel.as_ref().unwrap(), &msg, false)?;
         } else {
-            super::send_segmented_message(cfg, srv, log, &t.target_nick, &msg, false);
+            super::send_segmented_message(cfg, srv, log, &t.target_nick, &msg, false)?;
         }
-
     }
+    Ok(())
 }
 
-pub fn add(cfg: &ServerCfg, log: &Logger, msg: &Message, private: bool) -> String {
+pub fn add(cfg: &ServerCfg, log: &Logger, msg: &Message, private: bool) -> Result<String> {
     if let Command::PRIVMSG(ref target, ref content) = msg.command {
         let source_nick = msg.source_nickname().unwrap();
 
@@ -194,7 +197,9 @@ pub fn add(cfg: &ServerCfg, log: &Logger, msg: &Message, private: bool) -> Strin
             s
         } else {
             trace!(log, "invalid tell: {:?}", msg);
-            return "Invalid `.tell` syntax, try: `.tell <nick> <message>`".into();
+            return Ok(
+                "Invalid `.tell` syntax, try: `.tell <nick> <message>`".into(),
+            );
         };
 
         let date = &Utc::now().to_rfc2822()[..25];
@@ -207,29 +212,31 @@ pub fn add(cfg: &ServerCfg, log: &Logger, msg: &Message, private: bool) -> Strin
             message: target_msg,
         };
 
-        let conn = super::establish_database_connection(cfg, log);
-        let res = diesel::insert(&pending_tell)
+        let conn = super::establish_database_connection(cfg, log)?;
+        diesel::insert(&pending_tell)
             .into(schema::pending_tells::table)
-            .execute(&conn);
-        if res.is_err() {
-            crit!(
-                log,
-                "Failed to insert {:?} into {}",
-                pending_tell,
-                cfg.database
-            );
-            panic!("");
-        } else {
-            let mut hm = PENDING_TELLS_HM.lock();
-            *hm.get_mut(&cfg.address).unwrap().lock() += 1;
+            .execute(&conn)
+            .or_else(|err| {
+                crit!(
+                    log,
+                    "Failed to insert {:?} into {}",
+                    pending_tell,
+                    cfg.database
+                );
+                Err(ErrorKind::Diesel(err).into())
+            })
+            .and_then(|_| {
+                let mut hm = PENDING_TELLS_HM.lock();
+                *hm.get_mut(&cfg.address).unwrap().lock() += 1;
 
-            format!(
-                "{}: I will tell {}: {}",
-                source_nick,
-                target_nick,
-                target_msg
-            )
-        }
+                Ok(format!(
+                    "{}: I will tell {}: {}",
+                    source_nick,
+                    target_nick,
+                    target_msg
+                ))
+            })
+
     } else {
         unreachable!()
     }

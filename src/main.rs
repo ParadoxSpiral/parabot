@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
-#![feature(const_fn, inclusive_range, inclusive_range_syntax)]
+#![feature(inclusive_range, inclusive_range_syntax, type_ascription)]
 #![allow(unknown_lints)]
 
 extern crate chrono;
@@ -39,6 +39,8 @@ extern crate diesel;
 #[macro_use]
 extern crate diesel_codegen;
 #[macro_use]
+extern crate error_chain;
+#[macro_use]
 extern crate lazy_static;
 #[macro_use]
 extern crate serde_derive;
@@ -58,6 +60,19 @@ mod config;
 pub mod models;
 mod modules;
 pub mod schema;
+
+mod errors {
+    error_chain! {
+        foreign_links {
+            Irc(::irc::error::Error);
+            Serialization(::toml::de::Error);
+            Diesel(::diesel::result::Error);
+            DieselConn(::diesel::result::ConnectionError);
+            Reqwest(::reqwest::Error);
+        }
+        errors {}
+    }
+}
 
 // Init logging
 lazy_static!{
@@ -93,7 +108,7 @@ fn main() {
         })
         .unwrap();
 
-    let config = config::parse_config(&cfg);
+    let config = config::parse_config(&cfg).unwrap();
 
     // Spawn two threads per channel, incase modules lag on e.g. IO
     // TODO: Needs testing if this scales/is even necessary
@@ -110,13 +125,13 @@ fn main() {
     );
 
     // Init modules that require init
-    modules::init(&config, &SLOG_ROOT);
+    modules::init(&config, &SLOG_ROOT).unwrap();
 
     // Init state of each server
     let mut state = Vec::with_capacity(config.servers.len());
     for cfg in config.servers {
         // Avoid premature move of cfg into first tuple elem
-        let srv = Arc::new(IrcServer::from(&cfg));
+        let srv = Arc::new(cfg.new_ircserver().unwrap());
         let log = Arc::new(SLOG_ROOT.new(o!(
 			    			"Server" => format!("{} on {}:{}",cfg.nickname, cfg.address, cfg.port),
 			    			"Channels" => format!("{:?}", cfg.channels))));
@@ -139,7 +154,7 @@ fn main() {
                 let cfg = cfg.clone();
                 let srv = srv2.clone();
                 let log = log.clone();
-                pool.execute(move || modules::handle(&cfg, &srv, &log, msg));
+                pool.execute(move || modules::handle(&cfg, &srv, &log, msg).unwrap());
             }).unwrap();
         });
     });

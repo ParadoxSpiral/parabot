@@ -25,6 +25,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use std::collections::HashMap;
 
 use config::{Config, ServerCfg};
+use errors::*;
 
 mod help;
 mod tell;
@@ -41,13 +42,13 @@ lazy_static!{
     };
 }
 
-pub fn init(cfg: &Config, log: &Logger) {
-    tell::init(cfg, log);
-    weather::init(cfg, log);
+pub fn init(cfg: &Config, log: &Logger) -> Result<()> {
+    tell::init(cfg, log)?;
+    weather::init(cfg, log)
 }
 
 #[allow(needless_pass_by_value)]
-pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
+pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) -> Result<()> {
     match msg.command {
         // Currently uninteresting messages
         Command::NOTICE(..) |
@@ -87,9 +88,9 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
                 .password
                 .clone()
             {
-                srv.send_join_with_keys(&content[1], &key).unwrap();
+                srv.send_join_with_keys(&content[1], &key)?
             } else {
-                srv.send_join(&content[1]).unwrap();
+                srv.send_join(&content[1])?
             }
         }
         Command::Raw(ref s, ..) if s == "250" || s == "265" || s == "266" => {
@@ -109,13 +110,13 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
                 // We don't check if the module is enabled, because it's our responsibility to
                 // deliver the msg asap without fail, even if the bot owner disabled the module;
                 // If they *really* want, they can clean the database
-                tell::handle_user_join(cfg, srv, log, &msg);
+                tell::handle_user_join(cfg, srv, log, &msg)?;
             }
         }
         Command::Response(Response::RPL_NAMREPLY, ..) => {
             // The bot joined a channel, and asked for nicknames to see if they have any
             // pending tells. (NOTE: something, maybe the irc crate, asks automatically)
-            tell::handle_names_reply(cfg, srv, log, &msg);
+            tell::handle_names_reply(cfg, srv, log, &msg)?;
         }
         Command::PRIVMSG(ref target, ref content) => {
             debug!(log, "PRIVMSG to {}: {}", target, content);
@@ -130,7 +131,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
                     // TODO: Add owner config option
                     let reply = "I am the slave of ParadoxSpiral… at least 123% safer & faster \
                                  than m's & l's shit. For a list of commands, try `.help`";
-                    send_segmented_message(cfg, srv, log, reply_target, reply, false);
+                    send_segmented_message(cfg, srv, log, reply_target, reply, false)?;
                 } else if content[1..].starts_with("help") {
                     trace!(log, "Replying to .help");
                     let reply = help::handle(cfg, &*target, content, private);
@@ -141,20 +142,20 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
                         msg.source_nickname().unwrap(),
                         &reply,
                         true,
-                    );
+                    )?;
                 } else if (private || module_enabled_channel(cfg, &*target, "tell")) &&
                            content[1..].starts_with("tell")
                 {
                     trace!(log, "Starting .tell");
-                    let reply = tell::add(cfg, log, &msg, private);
-                    send_segmented_message(cfg, srv, log, reply_target, &reply, false);
+                    let reply = tell::add(cfg, log, &msg, private)?;
+                    send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
                 } else if (private || module_enabled_channel(cfg, &*target, "weather")) &&
                            content[1..].starts_with("weather")
                 {
                     trace!(log, "Starting .weather");
                     let nick = msg.source_nickname().unwrap();
-                    let reply = weather::handle(cfg, srv, log, &content[8..], nick);
-                    send_segmented_message(cfg, srv, log, reply_target, &reply, false);
+                    let reply = weather::handle(cfg, srv, log, &content[8..], nick)?;
+                    send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
                 } else {
                     warn!(log, "Unknown command {}", &content[1..]);
                 }
@@ -166,6 +167,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) {
             warn!(log, "Unhandled message: {:?}", msg);
         }
     }
+    Ok(())
 }
 
 fn module_enabled_channel(cfg: &ServerCfg, target: &str, module: &str) -> bool {
@@ -181,7 +183,7 @@ fn send_segmented_message(
     target: &str,
     msg: &str,
     notice: bool,
-) {
+) -> Result<()> {
     let graphemes = UnicodeSegmentation::graphemes(msg, true);
     let msg_bytes = msg.bytes().len();
     // :<hostname> <PRIVMSG|NOTICE> <target> :<message> [potential added escape chars]
@@ -189,19 +191,15 @@ fn send_segmented_message(
         1 + if notice { 6 } else { 7 } + 1 + target.bytes().len() + 2 + 7;
     trace!(log, "Msg bytes: {}; Fix bytes: {}", msg_bytes, fix_bytes);
 
-    let send_err = |msg: &str| {
-        if let Err(e) = if notice {
-            srv.send_notice(target, msg)
-        } else {
-            srv.send_privmsg(target, msg)
-        } {
-            crit!(log, "Failed to send message to {}: {:?}", target, e)
-        };
+    let send = |msg: &str| if notice {
+        srv.send_notice(target, msg)
+    } else {
+        srv.send_privmsg(target, msg)
     };
 
     if msg_bytes + fix_bytes <= MESSAGE_BYTES_LIMIT {
         trace!(log, "Message does not exceed limit");
-        send_err(msg);
+        send(msg)?;
     } else {
         let mut count = 0;
         let mut unescaped_controls = [false, false, false, false, false, false, false];
@@ -276,7 +274,7 @@ fn send_segmented_message(
                 if_any_unescaped_push(&mut msg);
                 trace!(log, "Sending {} cut msg: {:?}", target, &msg);
 
-                send_err(&msg);
+                send(&msg)?;
                 count = 0;
                 msg.clear();
                 if_any_unescaped_push(&mut msg);
@@ -285,27 +283,29 @@ fn send_segmented_message(
             msg.push_str(g);
         }
         if !msg.is_empty() {
-            send_err(&msg);
+            send(&msg)?;
         }
     }
+    Ok(())
 }
 
-fn establish_database_connection(cfg: &ServerCfg, log: &Logger) -> SqliteConnection {
-    let ret = SqliteConnection::establish(&cfg.database);
-    if ret.is_err() {
-        // The T does not impl Debug, so no .unwrap_err
-        if let Err(e) = ret {
-            crit!(log, "Failed to connect to database {}: {}", cfg.database, e);
-            panic!("Failed to connect to database {}: {}", cfg.database, e)
-        } else {
-            unreachable!()
-        }
-    } else {
-        trace!(
-            log,
-            "Successfully established connection to {}",
-            cfg.database
-        );
-        ret.unwrap()
-    }
+fn establish_database_connection(cfg: &ServerCfg, log: &Logger) -> Result<SqliteConnection> {
+    SqliteConnection::establish(&cfg.database)
+        .or_else(|err| {
+            crit!(
+                log,
+                "Failed to connect to database {}: {}",
+                cfg.database,
+                err
+            );
+            Err(ErrorKind::DieselConn(err).into())
+        })
+        .and_then(|db| {
+            trace!(
+                log,
+                "Successfully established connection to {}",
+                cfg.database
+            );
+            Ok(db)
+        })
 }

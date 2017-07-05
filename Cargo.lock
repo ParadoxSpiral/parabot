@@ -7,6 +7,7 @@ dependencies = [
  "crossbeam 0.2.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "diesel 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "diesel_codegen 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "error-chain 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "forecast 1.0.0 (git+https://github.com/ParadoxSpiral/forecast-rs)",
  "irc 0.12.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)",
