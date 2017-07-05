@@ -32,9 +32,9 @@ mod tell;
 mod weather;
 
 const COMMAND_MODIFIER: char = '.';
-// TODO: I'm not sure what the actual limit is, I read that the server may add crap to your msg,
-// so there's 30 bytes for that
-const MESSAGE_BYTES_LIMIT: usize = 478;
+// The spec does not define a limit, but it's 500b in most cases. However, the server may
+// add crap to your message, you cannot know. Hopefully 30b is enough..
+const MESSAGE_BYTES_LIMIT: usize = 470;
 
 lazy_static!{
     static ref HOSTNAMES: RwLock<HashMap<String, String>> = {
@@ -184,11 +184,10 @@ fn send_segmented_message(
     msg: &str,
     notice: bool,
 ) -> Result<()> {
-    let graphemes = UnicodeSegmentation::graphemes(msg, true);
     let msg_bytes = msg.bytes().len();
-    // :<hostname> <PRIVMSG|NOTICE> <target> :<message> [potential added escape chars]
-    let fix_bytes = 1 + HOSTNAMES.read().get(&cfg.address).unwrap().bytes().len() +
-        1 + if notice { 6 } else { 7 } + 1 + target.bytes().len() + 2 + 7;
+    // :<hostname> <PRIVMSG|NOTICE> <target> :<message>
+    let fix_bytes = 1 + HOSTNAMES.read().get(&cfg.address).unwrap().bytes().len() + 1 +
+        if notice { 6 } else { 7 } + 1 + target.bytes().len() + 2;
     trace!(log, "Msg bytes: {}; Fix bytes: {}", msg_bytes, fix_bytes);
 
     let send = |msg: &str| if notice {
@@ -203,87 +202,174 @@ fn send_segmented_message(
     } else {
         let mut count = 0;
         let mut unescaped_controls = [false, false, false, false, false, false, false];
-        let mut msg = String::with_capacity(MESSAGE_BYTES_LIMIT - fix_bytes);
-        for g in graphemes {
-            let len = g.bytes().len();
-            // TODO: Is there any better way to do this?
-            // For magic values see  https://stackoverflow.com/questions/1391610/embed-mirc-color-
-            // codes-into-a-c-sharp-literal/13382032#13382032
-            // FIXME: This is actually broken for color, because we don't insert the specific color
-            // code again
-            if g == "\x02" {
-                if unescaped_controls[0] {
-                    unescaped_controls[0] = false;
-                } else {
-                    unescaped_controls[0] = true;
+        let mut color_code = String::with_capacity(5);
+        let mut current_msg = String::with_capacity(MESSAGE_BYTES_LIMIT - fix_bytes);
+        let mut graphemes = UnicodeSegmentation::graphemes(msg, true).peekable();
+        // We don't use a for loop because we need to mutably access graphemes below
+        loop {
+            if let Some(next) = graphemes.next() {
+                // For magic values see https://stackoverflow.com/questions/1391610/embed-
+                //mirc-color-codes-into-a-c-sharp-literal/13382032#13382032
+                if next == "\x02" {
+                    if unescaped_controls[0] {
+                        count -= 1;
+                        unescaped_controls[0] = false;
+                    } else {
+                        count += 1;
+                        unescaped_controls[0] = true;
+                    }
+                } else if next == "\x03" {
+                    if unescaped_controls[1] {
+                        count -= 1 + color_code.len();
+                        color_code.clear();
+                        unescaped_controls[1] = false;
+                    } else {
+                        // worst case: \x0315,15
+                        let first = graphemes.next().unwrap();
+                        if *graphemes.peek().unwrap() == "," {
+                            // \x031,1
+                            let _ = graphemes.next().unwrap();
+                            let second = graphemes.next().unwrap();
+                            if let Ok(_) = graphemes.peek().unwrap().parse::<usize>() {
+                                // \x031,15
+                                let third = graphemes.next().unwrap();
+                                count += 5;
+                                color_code.push_str(first);
+                                color_code.push_str(",");
+                                color_code.push_str(second);
+                                color_code.push_str(third);
+                            } else {
+                                // \x031,1
+                                count += 4;
+                                color_code.push_str(first);
+                                color_code.push_str(",");
+                                color_code.push_str(second);
+                            }
+                        } else if let Ok(_) = graphemes.peek().unwrap().parse::<usize>() {
+                            // \x0315
+                            let second = graphemes.next().unwrap();
+                            if *graphemes.peek().unwrap() == "," {
+                                // \x0315,1
+                                let _ = graphemes.next().unwrap();
+                                let third = graphemes.next().unwrap();
+                                if let Ok(_) = graphemes.peek().unwrap().parse::<usize>() {
+                                    // \x0315,15
+                                    count += 6;
+                                    let fourth = graphemes.next().unwrap();
+                                    color_code.push_str(first);
+                                    color_code.push_str(second);
+                                    color_code.push_str(",");
+                                    color_code.push_str(third);
+                                    color_code.push_str(fourth);
+                                } else {
+                                    // \x0315,1
+                                    count += 5;
+                                    color_code.push_str(first);
+                                    color_code.push_str(second);
+                                    color_code.push_str(",");
+                                    color_code.push_str(third);
+                                }
+                            } else {
+                                // \x0315
+                                let second = graphemes.next().unwrap();
+                                count += 3;
+                                color_code.push_str(first);
+                                color_code.push_str(second);
+                            }
+                        } else {
+                            // \x031
+                            count += 2;
+                            color_code.push_str(first);
+                        }
+                        unescaped_controls[1] = true;
+                    }
+                } else if next == "\x09" {
+                    if unescaped_controls[2] {
+                        count -= 1;
+                        unescaped_controls[2] = false;
+                    } else {
+                        count += 1;
+                        unescaped_controls[2] = true;
+                    }
+                } else if next == "\x13" {
+                    if unescaped_controls[3] {
+                        count -= 1;
+                        unescaped_controls[3] = false;
+                    } else {
+                        count += 1;
+                        unescaped_controls[3] = true;
+                    }
+                } else if next == "\x15" {
+                    if unescaped_controls[4] {
+                        count -= 1;
+                        unescaped_controls[4] = false;
+                    } else {
+                        count += 1;
+                        unescaped_controls[4] = true;
+                    }
+                } else if next == "\x1f" {
+                    if unescaped_controls[5] {
+                        count -= 1;
+                        unescaped_controls[5] = false;
+                    } else {
+                        count += 1;
+                        unescaped_controls[5] = true;
+                    }
+                } else if next == "\x16" {
+                    if unescaped_controls[6] {
+                        count -= 1;
+                        unescaped_controls[6] = false;
+                    } else {
+                        count += 1;
+                        unescaped_controls[6] = true;
+                    }
                 }
-            } else if g == "\x03" {
-                if unescaped_controls[1] {
-                    unescaped_controls[1] = false;
-                } else {
-                    unescaped_controls[1] = true;
-                }
-            } else if g == "\x09" {
-                if unescaped_controls[2] {
-                    unescaped_controls[2] = false;
-                } else {
-                    unescaped_controls[2] = true;
-                }
-            } else if g == "\x13" {
-                if unescaped_controls[3] {
-                    unescaped_controls[3] = false;
-                } else {
-                    unescaped_controls[3] = true;
-                }
-            } else if g == "\x15" {
-                if unescaped_controls[4] {
-                    unescaped_controls[4] = false;
-                } else {
-                    unescaped_controls[4] = true;
-                }
-            } else if g == "\x1f" {
-                if unescaped_controls[5] {
-                    unescaped_controls[5] = false;
-                } else {
-                    unescaped_controls[5] = true;
-                }
-            } else if g == "\x16" {
-                if unescaped_controls[6] {
-                    unescaped_controls[6] = false;
-                } else {
-                    unescaped_controls[6] = true;
-                }
-            }
-            if count + len >= MESSAGE_BYTES_LIMIT - fix_bytes {
-                let if_any_unescaped_push = |out: &mut String| if unescaped_controls[0] {
-                    out.push_str("\x02");
-                } else if unescaped_controls[1] {
-                    out.push_str("\x03");
-                } else if unescaped_controls[2] {
-                    out.push_str("\x09");
-                } else if unescaped_controls[3] {
-                    out.push_str("\x13");
-                } else if unescaped_controls[4] {
-                    out.push_str("\x15");
-                } else if unescaped_controls[5] {
-                    out.push_str("\x1f");
-                } else if unescaped_controls[6] {
-                    out.push_str("\x16");
-                };
 
-                if_any_unescaped_push(&mut msg);
-                trace!(log, "Sending {} cut msg: {:?}", target, &msg);
+                let len = next.bytes().len();
+                if count + len > MESSAGE_BYTES_LIMIT - fix_bytes {
+                    let if_any_unescaped_push = |out: &mut String, new_line| {
+                        if unescaped_controls[0] {
+                            out.push_str("\x02");
+                        }
+                        if unescaped_controls[1] {
+                            out.push_str("\x03");
+                            if new_line {
+                                out.push_str(&color_code);
+                            }
+                        }
+                        if unescaped_controls[2] {
+                            out.push_str("\x09");
+                        }
+                        if unescaped_controls[3] {
+                            out.push_str("\x13");
+                        }
+                        if unescaped_controls[4] {
+                            out.push_str("\x15");
+                        }
+                        if unescaped_controls[5] {
+                            out.push_str("\x1f");
+                        }
+                        if unescaped_controls[6] {
+                            out.push_str("\x16");
+                        }
+                    };
 
-                send(&msg)?;
-                count = 0;
-                msg.clear();
-                if_any_unescaped_push(&mut msg);
+                    if_any_unescaped_push(&mut current_msg, false);
+                    trace!(log, "Sending {} cut msg: {:?}", target, &current_msg);
+
+                    send(&current_msg)?;
+                    count = 0;
+                    current_msg.clear();
+                    if_any_unescaped_push(&mut current_msg, true);
+                }
+                count += len;
+                current_msg.push_str(next);
+            } else {
+                if !current_msg.is_empty() {
+                    send(&current_msg)?;
+                }
+                break;
             }
-            count += len;
-            msg.push_str(g);
-        }
-        if !msg.is_empty() {
-            send(&msg)?;
         }
     }
     Ok(())
