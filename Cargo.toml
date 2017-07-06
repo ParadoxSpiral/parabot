@@ -27,7 +27,10 @@ chrono-tz = "0.4"
 crossbeam = "0.2"
 diesel = { version = "0.13.0", features = ["sqlite"] }
 diesel_codegen = { version = "0.13.0", features = ["sqlite"] }
+encoding = "0.2"
 error-chain = "0.10"
+html5ever = "0.18"
+humansize = "1.0"
 irc = "0.12"
 lazy_static = "0.2"
 parking_lot = {version = "0.4", features = ["nightly"]}

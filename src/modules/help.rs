@@ -21,7 +21,7 @@ pub fn handle(cfg: &ServerCfg, target: &str, msg: &str, private: bool) -> String
     if &msg[1..] == "help" {
         if private {
             "Hi! For more information, use .help <module>. In private (i.e. non channel mode) \
-             you can use these modules: `remind`, `weather`, `wolfram-alpha`, `tell`."
+             you can use these modules: `url-info`, `weather`, `tell`."
                 .to_owned()
         } else {
             let mut modules = cfg.channels
@@ -60,9 +60,8 @@ pub fn handle(cfg: &ServerCfg, target: &str, msg: &str, private: bool) -> String
                 unimplemented!();
                 ".wa <query> will query wolfram-alpha about <query>.".to_owned()
             }
-            "url" => {
-                unimplemented!();
-                "url fetches urls posted in the channel and displays their metadata, and, \
+            "url-info" | "url" => {
+                "url-info fetches urls posted in the channel and displays their metadata, and, \
                  depending on the website, more e.g. youtube views."
                     .to_owned()
             }
@@ -71,6 +70,10 @@ pub fn handle(cfg: &ServerCfg, target: &str, msg: &str, private: bool) -> String
                 "Oi".to_owned()
             }
             "remind" | ".remind" => {
+                unimplemented!();
+                "Oi".to_owned()
+            }
+            "ddg" | ".ddg" => {
                 unimplemented!();
                 "Oi".to_owned()
             }
