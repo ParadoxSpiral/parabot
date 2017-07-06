@@ -13,10 +13,10 @@ port = 6697
 	[[server.channel]]
 	name = "#c"
 	# optional: password = "channel_key"
-	modules = ["url", "tell", "weather", "wolfram-alpha"]
+	modules = ["url-info", "tell", "weather"]
 	[[server.channel]]
 	name = "#news"
-	modules = ["url", "weather"]
+	modules = ["url-info", "weather"]
 
 [[server]]
 address = "irc.freenode.net"
@@ -25,4 +25,4 @@ nickserv_password = "test123"
 port = 6697
 	[[server.channel]]
 	name = "##rust"
-	modules = ["url"]
+	modules = ["url-info"]

@@ -15,13 +15,16 @@
 // You should have received a copy of the GNU General Public License
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
-#![feature(inclusive_range, inclusive_range_syntax, type_ascription)]
+#![feature(inclusive_range, inclusive_range_syntax)]
 #![allow(unknown_lints)]
 
 extern crate chrono;
 extern crate chrono_tz;
 extern crate crossbeam;
+extern crate encoding;
 extern crate forecast;
+extern crate html5ever;
+extern crate humansize;
 extern crate irc;
 extern crate parking_lot;
 extern crate regex;
@@ -69,8 +72,14 @@ mod errors {
             Diesel(::diesel::result::Error);
             DieselConn(::diesel::result::ConnectionError);
             Reqwest(::reqwest::Error);
+            Io(::std::io::Error);
+            Utf8(::std::string::FromUtf8Error);
         }
-        errors {}
+        errors {
+            NoExtractableData {
+                description("The url did not serve any usable data")
+            }
+        }
     }
 }
 
@@ -133,7 +142,7 @@ fn main() {
         // Avoid premature move of cfg into first tuple elem
         let srv = Arc::new(cfg.new_ircserver().unwrap());
         let log = Arc::new(SLOG_ROOT.new(o!(
-			    			"Server" => format!("{} on {}:{}",cfg.nickname, cfg.address, cfg.port),
+                            "Server" => format!("{} on {}:{}", cfg.nickname, cfg.address, cfg.port),
 			    			"Channels" => format!("{:?}", cfg.channels))));
         state.push((Arc::new(cfg), srv, log));
     }

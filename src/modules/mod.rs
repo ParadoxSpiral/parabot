@@ -19,6 +19,8 @@ use diesel::Connection;
 use diesel::sqlite::SqliteConnection;
 use irc::client::prelude::*;
 use parking_lot::RwLock;
+use regex::Regex;
+use reqwest;
 use slog::Logger;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -29,6 +31,7 @@ use errors::*;
 
 mod help;
 mod tell;
+mod url;
 mod weather;
 
 const COMMAND_MODIFIER: char = '.';
@@ -120,15 +123,14 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) -> R
         }
         Command::PRIVMSG(ref target, ref content) => {
             debug!(log, "PRIVMSG to {}: {}", target, content);
+            let reply_target = msg.response_target().unwrap();
+            let private = !(target == reply_target);
 
             // Check if msg is a command, handle command/context modules
             if content.chars().nth(0).unwrap() == COMMAND_MODIFIER {
-                let reply_target = msg.response_target().unwrap();
-                let private = !(target == reply_target);
-
                 if &content[1..] == "bots" || &content[1..] == "bot" {
                     trace!(log, "Replying to .bots");
-                    // TODO: Add owner config option
+                    // TODO: Add owner config option/ bots reply
                     let reply = "I am the slave of ParadoxSpiral… at least 123% safer & faster \
                                  than m's & l's shit. For a list of commands, try `.help`";
                     send_segmented_message(cfg, srv, log, reply_target, reply, false)?;
@@ -159,8 +161,65 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) -> R
                 } else {
                     warn!(log, "Unknown command {}", &content[1..]);
                 }
-            } else {
-                // TODO: e.g. URL Regex + fetch
+            } else if private || module_enabled_channel(cfg, &*target, "url-info") {
+                lazy_static! (
+                        static ref URL_REGEX: Regex = Regex::new("\
+                            .*?\
+                            (?:\
+                                (?:\
+                                    <\
+                                    (?P<url_v1>\
+                                        (?P<protocol_v1>(?:(?:http)|(?:https))://){0,1}\
+                                            (?:\
+                                                [^\\s]*?\
+                                                \\.\
+                                            ){0,1}\
+                                        [^\\s]*?\
+                                        \\.{1}\
+                                        [^\\s]*\
+                                    )\
+                                    >\
+                                )|\
+                                (?:\
+                                    (?P<url_v2>\
+                                        (?P<protocol_v2>(?:(?:http)|(?:https))://){0,1}\
+                                            (?:\
+                                                [^\\s]*?\
+                                                \\.\
+                                            ){0,1}\
+                                        [^\\s]*?\
+                                        \\.{1}\
+                                        [^\\s]*\
+                            )))\
+                            .*?\
+                            ").unwrap();
+                );
+                for cap in URL_REGEX.captures_iter(content) {
+                    let url = cap.name("url_v1").or_else(|| cap.name("url_v2"));
+                    let proto = cap.name("protocol_v1").or_else(|| cap.name("protocol_v2"));
+                    if let Some(url) = url {
+                        trace!(log, "URL match: {:?}", url);
+                        let url = if proto.is_none() {
+                            // Fuck everything that uses http in these let's encrypt days
+                            let mut u = String::with_capacity(url.as_str().len() + 8);
+                            u.push_str(url.as_str());
+                            u.push_str("https://");
+                            u
+                        } else {
+                            url.as_str().to_owned()
+                        };
+                        let res = reqwest::get(&url);
+                        if let Ok(res) = res {
+                            if res.status().is_success() {
+                                let reply_target = msg.response_target().unwrap();
+                                let reply = url::handle(res)?;
+                                send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
+                            }
+                        } else {
+                            trace!(log, "Failed reqwest; Res: {:?}", res);
+                        }
+                    }
+                }
             }
         }
         _ => {
@@ -197,7 +256,7 @@ fn send_segmented_message(
     };
 
     if msg_bytes + fix_bytes <= MESSAGE_BYTES_LIMIT {
-        trace!(log, "Message does not exceed limit");
+        trace!(log, "Message does not exceed limit: {}", msg);
         send(msg)?;
     } else {
         let mut count = 0;
@@ -230,7 +289,7 @@ fn send_segmented_message(
                             // \x031,1
                             let _ = graphemes.next().unwrap();
                             let second = graphemes.next().unwrap();
-                            if let Ok(_) = graphemes.peek().unwrap().parse::<usize>() {
+                            if graphemes.peek().unwrap().parse::<usize>().is_ok() {
                                 // \x031,15
                                 let third = graphemes.next().unwrap();
                                 count += 5;
@@ -245,14 +304,14 @@ fn send_segmented_message(
                                 color_code.push_str(",");
                                 color_code.push_str(second);
                             }
-                        } else if let Ok(_) = graphemes.peek().unwrap().parse::<usize>() {
+                        } else if graphemes.peek().unwrap().parse::<usize>().is_ok() {
                             // \x0315
                             let second = graphemes.next().unwrap();
                             if *graphemes.peek().unwrap() == "," {
                                 // \x0315,1
                                 let _ = graphemes.next().unwrap();
                                 let third = graphemes.next().unwrap();
-                                if let Ok(_) = graphemes.peek().unwrap().parse::<usize>() {
+                                if graphemes.peek().unwrap().parse::<usize>().is_ok() {
                                     // \x0315,15
                                     count += 6;
                                     let fourth = graphemes.next().unwrap();

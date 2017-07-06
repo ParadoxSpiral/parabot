@@ -386,15 +386,15 @@ pub fn handle(
             .unwrap();
         let mut revl = String::new();
         if city != "" {
-            revl.push_str(&format!("{}, ", city));
+            revl.push_str(city);
         }
         if state != "" {
-            revl.push_str(&format!("{}, ", state));
+            revl.push_str(state);
         } else if county != "" {
-            revl.push_str(&format!("{}, ", county));
+            revl.push_str(county);
         }
         if country != "" {
-            revl.push_str(&format!("{}", country));
+            revl.push_str(country);
         }
 
         GEOCODING_CACHE
@@ -557,7 +557,7 @@ pub fn handle(
                             srv,
                             log,
                             nick,
-                            &format!(
+                            format!(
                                 "{}, severity: {:?} in {:?}; See <{}>; ",
                                 n,
                                 a.severity,
