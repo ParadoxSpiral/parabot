@@ -20,7 +20,8 @@ use encoding::label::encoding_from_whatwg_label;
 use html5ever;
 use html5ever::rcdom::{NodeData, RcDom, Handle};
 use html5ever::tendril::TendrilSink;
-use reqwest::header::ContentType;
+use humansize::{FileSize, file_size_opts as Options};
+use reqwest::header::{ContentLength, ContentType};
 use reqwest::mime::{Attr, Value};
 use reqwest::Response;
 
@@ -29,12 +30,10 @@ use std::io::{Cursor, Read};
 use errors::*;
 
 pub fn handle(mut response: Response) -> Result<String> {
-    let body = body_from_charsets(&mut response);
-    if body.is_ok() {
-        let mut body = Cursor::new(body.unwrap());
+    Ok(if let Ok(body) = body_from_charsets(&mut response) {
+        let mut body = Cursor::new(body);
         let headers = response.headers();
-
-        Ok(match (
+        match (
             headers.get::<ContentType>(),
             html5ever::parse_document(RcDom::default(), Default::default())
                 .from_utf8()
@@ -59,12 +58,30 @@ pub fn handle(mut response: Response) -> Result<String> {
                 let ct = &ct.0;
                 format!("[{}: {}", ct.0.as_str(), ct.1.as_str())
             }
-            _ => unimplemented!(),
-        })
+            (None, Err(_)) => unimplemented!(),
+        }
     } else {
-        // Try to use other headers here or in the above in unimpl!
-        unimplemented!();
-    }
+        // Most like e.g. an image
+        let headers = response.headers();
+        match (
+            headers.get::<ContentType>().and_then(|ct| {
+                let ct = &ct.0;
+                Some((&ct.0, &ct.1))
+            }),
+            headers.get::<ContentLength>(),
+        ) {
+            (Some((ref top, ref sub)), Some(l)) => {
+                format!(
+                    "[{}: {}; {}]",
+                    top,
+                    sub,
+                    l.file_size(Options::CONVENTIONAL).unwrap()
+                )
+            }
+            (Some((ref top, ref sub)), None) => format!("[{}: {}]", top, sub),
+            (None, _) => unimplemented!(),
+        }
+    })
 }
 
 fn body_from_charsets(resp: &mut Response) -> Result<String> {
