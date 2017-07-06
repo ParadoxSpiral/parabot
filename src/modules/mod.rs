@@ -195,33 +195,37 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) -> R
                             .*?\
                             ").unwrap();
                 );
-                    let caps = URL_REGEX.captures(content);
-                    let url = caps.as_ref()
-                        .and_then(|caps| caps.name("url_v1").or_else(|| caps.name("url_v2")));
-                    let proto = caps.as_ref().and_then(|caps| {
-                        caps.name("protocol_v1")
-                            .or_else(|| caps.name("protocol_v2"))
-                    });
-                    if let Some(url) = url {
-                        trace!(log, "URL match: {:?}", url);
-                        let url = if let None = proto {
-                            // Fuck everything that uses http in these let's encrypt days
-                            let mut u = String::with_capacity(url.as_str().len() + 8);
-                            u.push_str(url.as_str());
-                            u.push_str("https://");
-                            u
-                        } else {
-                            url.as_str().to_owned()
-                        };
-                        let res = reqwest::get(&url);
-                        if let Ok(res) = res {
-                            if res.status().is_success() {
-                                let reply_target = msg.response_target().unwrap();
-                                let reply = url::handle(res)?;
-                                send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
+                    for cap in URL_REGEX.captures_iter(content) {
+                        let url = cap.name("url_v1").or_else(|| cap.name("url_v2"));
+                        let proto = cap.name("protocol_v1").or_else(|| cap.name("protocol_v2"));
+                        if let Some(url) = url {
+                            trace!(log, "URL match: {:?}", url);
+                            let url = if let None = proto {
+                                // Fuck everything that uses http in these let's encrypt days
+                                let mut u = String::with_capacity(url.as_str().len() + 8);
+                                u.push_str(url.as_str());
+                                u.push_str("https://");
+                                u
+                            } else {
+                                url.as_str().to_owned()
+                            };
+                            let res = reqwest::get(&url);
+                            if let Ok(res) = res {
+                                if res.status().is_success() {
+                                    let reply_target = msg.response_target().unwrap();
+                                    let reply = url::handle(res)?;
+                                    send_segmented_message(
+                                        cfg,
+                                        srv,
+                                        log,
+                                        reply_target,
+                                        &reply,
+                                        false,
+                                    )?;
+                                }
+                            } else {
+                                trace!(log, "Failed reqwest; Res: {:?}", res);
                             }
-                        } else {
-                            trace!(log, "Failed reqwest; Res: {:?}", res);
                         }
                     }
                 }
