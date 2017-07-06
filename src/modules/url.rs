@@ -20,7 +20,6 @@ use encoding::label::encoding_from_whatwg_label;
 use html5ever;
 use html5ever::rcdom::{NodeData, RcDom, Handle};
 use html5ever::tendril::TendrilSink;
-use humansize::{FileSize, file_size_opts as Options};
 use reqwest::header::ContentType;
 use reqwest::mime::{Attr, Value};
 use reqwest::Response;
@@ -30,39 +29,42 @@ use std::io::{Cursor, Read};
 use errors::*;
 
 pub fn handle(mut response: Response) -> Result<String> {
-    let body = body_from_charsets(&mut response)?;
-    let size = body.len();
-    let size = size.file_size(Options::CONVENTIONAL).unwrap();
-    let mut body = Cursor::new(body);
-    let headers = response.headers();
+    let body = body_from_charsets(&mut response);
+    if body.is_ok() {
+        let mut body = Cursor::new(body.unwrap());
+        let headers = response.headers();
 
-    Ok(match (
-        headers.get::<ContentType>(),
-        html5ever::parse_document(RcDom::default(), Default::default())
-            .from_utf8()
-            .read_from(&mut body),
-    ) {
-        (_, Ok(dom)) => {
-            let mut title = String::new();
-            let mut description = String::new();
-            walk(dom.document, &mut title, &mut description);
+        Ok(match (
+            headers.get::<ContentType>(),
+            html5ever::parse_document(RcDom::default(), Default::default())
+                .from_utf8()
+                .read_from(&mut body),
+        ) {
+            (_, Ok(dom)) => {
+                let mut title = String::new();
+                let mut description = String::new();
+                walk(dom.document, &mut title, &mut description);
 
-            // Imgur is a piece of shit that sets the title with JS dynamically
-            // TODO: Find more pieces of shit that behave shittily
-            if let Some("imgur.com") = response.url().domain() {
-                format!("[{}; {}]", description, size)
-            } else if description.is_empty() || description == title {
-                format!("[{}; {}]", title, size)
-            } else {
-                format!("[{}: {}; {}]", title, description, size)
+                // Imgur is a piece of shit that sets the title with JS dynamically
+                // TODO: Find more pieces of shit that behave shittily
+                if let Some("imgur.com") = response.url().domain() {
+                    format!("[{}]", description)
+                } else if description.is_empty() || description == title {
+                    format!("[{}]", title)
+                } else {
+                    format!("[{}: {}]", title, description)
+                }
             }
-        }
-        (Some(ct), Err(_)) => {
-            let ct = &ct.0;
-            format!("[{}: {}; {}]", ct.0.as_str(), ct.1.as_str(), size)
-        }
-        _ => format!("[{}]", size),
-    })
+            (Some(ct), _) => {
+                let ct = &ct.0;
+                format!("[{}: {}", ct.0.as_str(), ct.1.as_str())
+            }
+            _ => unimplemented!(),
+        })
+    } else {
+        // Try to use other headers here or in the above in unimpl!
+        unimplemented!();
+    }
 }
 
 fn body_from_charsets(resp: &mut Response) -> Result<String> {

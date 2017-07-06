@@ -24,7 +24,6 @@ extern crate crossbeam;
 extern crate encoding;
 extern crate forecast;
 extern crate html5ever;
-extern crate humansize;
 extern crate irc;
 extern crate parking_lot;
 extern crate regex;
