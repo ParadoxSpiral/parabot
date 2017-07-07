@@ -51,8 +51,7 @@ pub fn handle(mut response: Response) -> Result<String> {
     ) {
         (Ok(dom), _, _) => {
             let mut title = String::new();
-            let mut description = String::new();
-            walk(dom.document, &mut title, &mut description);
+            walk(dom.document, &mut title);
 
             // TODO: More website specific stuff
             Ok(format!("[{}]", title))
@@ -91,7 +90,7 @@ fn body_from_charsets(bytes: Vec<u8>, headers: &Headers) -> Result<String> {
     })
 }
 
-fn walk(node: Handle, title: &mut String, description: &mut String) {
+fn walk(node: Handle, title: &mut String) {
     match node.data {
         NodeData::Element {
             ref name,
@@ -108,16 +107,6 @@ fn walk(node: Handle, title: &mut String, description: &mut String) {
                         }
                     }
                 }
-            } else if &*name.local == "meta" {
-                let mut in_description = false;
-                for attr in attrs.borrow().iter() {
-                    if &*attr.name.local == "name" && &*attr.value == "description" {
-                        in_description = true;
-                    } else if &*attr.name.local == "content" && in_description {
-                        in_description = false;
-                        description.push_str(attr.value.trim());
-                    }
-                }
             }
         }
         NodeData::ProcessingInstruction { .. } => unreachable!(),
@@ -127,6 +116,6 @@ fn walk(node: Handle, title: &mut String, description: &mut String) {
         NodeData::Text { .. } => {}
     }
     for child in node.children.borrow().iter() {
-        walk(child.clone(), title, description);
+        walk(child.clone(), title);
     }
 }
