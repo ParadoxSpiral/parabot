@@ -33,57 +33,42 @@ pub fn handle(mut response: Response) -> Result<String> {
     let mut bytes = Vec::new();
     response.read_to_end(&mut bytes)?;
     let headers = response.headers();
+    let body = body_from_charsets(bytes, headers).and_then(|body| Ok(Cursor::new(body)));
 
-    Ok(if let Ok(body) = body_from_charsets(bytes, headers) {
-        let mut body = Cursor::new(body);
-        match (
-            headers.get::<ContentType>(),
-            html5ever::parse_document(RcDom::default(), Default::default())
-                .from_utf8()
-                .read_from(&mut body),
-        ) {
-            (_, Ok(dom)) => {
-                let mut title = String::new();
-                let mut description = String::new();
-                walk(dom.document, &mut title, &mut description);
+    match (
+        body.and_then(|mut body| {
+            Ok(html5ever::parse_document(
+                RcDom::default(),
+                Default::default(),
+            ).from_utf8()
+                .read_from(&mut body)?)
+        }),
+        headers.get::<ContentLength>(),
+        headers.get::<ContentType>().and_then(|ct| {
+            let ct = &ct.0;
+            Some((&ct.0, &ct.1))
+        }),
+    ) {
+        (Ok(dom), _, _) => {
+            let mut title = String::new();
+            let mut description = String::new();
+            walk(dom.document, &mut title, &mut description);
 
-                // Imgur is a piece of shit that sets the title with JS dynamically
-                // TODO: Find more pieces of shit that behave shittily
-                if let Some("imgur.com") = response.url().domain() {
-                    format!("[{}]", description)
-                } else if description.is_empty() || description == title && title != "" {
-                    format!("[{}]", title)
-                } else {
-                    format!("[{}: {}]", title, description)
-                }
-            }
-            (Some(ct), _) => {
-                let ct = &ct.0;
-                format!("[{}: {}]", ct.0.as_str(), ct.1.as_str())
-            }
-            (None, Err(_)) => unimplemented!(),
+            // TODO: More website specific stuff
+            Ok(format!("[{}]", title))
         }
-    } else {
-        // Most likely an image or similar
-        match (
-            headers.get::<ContentType>().and_then(|ct| {
-                let ct = &ct.0;
-                Some((&ct.0, &ct.1))
-            }),
-            headers.get::<ContentLength>(),
-        ) {
-            (Some((top, sub)), Some(l)) => {
-                format!(
-                    "[{}: {}; {}]",
-                    top,
-                    sub,
-                    l.file_size(Options::CONVENTIONAL).unwrap()
-                )
-            }
-            (Some((top, sub)), None) => format!("[{}: {}]", top, sub),
-            (None, _) => unimplemented!(),
+        (Err(_), Some(l), Some((top, sub))) => {
+            Ok(format!(
+                "[{}: {}; {}]",
+                top,
+                sub,
+                l.file_size(Options::CONVENTIONAL).unwrap()
+            ))
         }
-    })
+        (_, None, Some((top, sub))) => Ok(format!("[{}: {}]", top, sub)),
+        (Err(_), None, None) |
+        (Err(_), Some(_), None) => Err(ErrorKind::NoExtractableData.into()),
+    }
 }
 
 fn body_from_charsets(bytes: Vec<u8>, headers: &Headers) -> Result<String> {

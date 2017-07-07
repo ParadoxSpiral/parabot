@@ -75,7 +75,11 @@ mod errors {
             Io(::std::io::Error);
             Utf8(::std::string::FromUtf8Error);
         }
-        errors {}
+        errors {
+            NoExtractableData {
+                description("The url did not serve any usable data")
+            }
+        }
     }
 }
 
