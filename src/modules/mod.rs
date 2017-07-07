@@ -244,9 +244,9 @@ fn send_segmented_message(
     notice: bool,
 ) -> Result<()> {
     let msg_bytes = msg.bytes().len();
-    // :<hostname> <PRIVMSG|NOTICE> <target> :<message>
+    // :<hostname> <PRIVMSG|NOTICE> <target> :\u{200B}<message>
     let fix_bytes = 1 + HOSTNAMES.read().get(&cfg.address).unwrap().bytes().len() + 1 +
-        if notice { 6 } else { 7 } + 1 + target.bytes().len() + 2;
+        if notice { 6 } else { 7 } + 1 + target.bytes().len() + 3;
     trace!(log, "Msg bytes: {}; Fix bytes: {}", msg_bytes, fix_bytes);
 
     let send = |msg: &str| if notice {
@@ -257,12 +257,13 @@ fn send_segmented_message(
 
     if msg_bytes + fix_bytes <= MESSAGE_BYTES_LIMIT {
         trace!(log, "Message does not exceed limit: {}", msg);
-        send(msg)?;
+        send(&("\u{200B}".to_owned() + msg))?;
     } else {
         let mut count = 0;
         let mut unescaped_controls = [false, false, false, false, false, false, false];
         let mut color_code = String::with_capacity(5);
         let mut current_msg = String::with_capacity(MESSAGE_BYTES_LIMIT - fix_bytes);
+        current_msg.push_str("\u{200B}");
         let mut graphemes = UnicodeSegmentation::graphemes(msg, true).peekable();
         // We don't use a for loop because we need to mutably access graphemes below
         loop {
@@ -419,6 +420,7 @@ fn send_segmented_message(
                     send(&current_msg)?;
                     count = 0;
                     current_msg.clear();
+                    current_msg.push_str("\u{200B}");
                     if_any_unescaped_push(&mut current_msg, true);
                 }
                 count += len;
