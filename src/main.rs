@@ -73,6 +73,7 @@ mod errors {
             DieselConn(::diesel::result::ConnectionError);
             Reqwest(::reqwest::Error);
             Io(::std::io::Error);
+            Utf8(::std::string::FromUtf8Error);
         }
         errors {}
     }

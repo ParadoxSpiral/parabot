@@ -21,7 +21,7 @@ use html5ever;
 use html5ever::rcdom::{NodeData, RcDom, Handle};
 use html5ever::tendril::TendrilSink;
 use humansize::{FileSize, file_size_opts as Options};
-use reqwest::header::{ContentLength, ContentType};
+use reqwest::header::{ContentLength, ContentType, Headers};
 use reqwest::mime::{Attr, Value};
 use reqwest::Response;
 
@@ -30,9 +30,12 @@ use std::io::{Cursor, Read};
 use errors::*;
 
 pub fn handle(mut response: Response) -> Result<String> {
-    Ok(if let Ok(body) = body_from_charsets(&mut response) {
+    let mut bytes = Vec::new();
+    response.read_to_end(&mut bytes)?;
+    let headers = response.headers();
+
+    Ok(if let Ok(body) = body_from_charsets(bytes, headers) {
         let mut body = Cursor::new(body);
-        let headers = response.headers();
         match (
             headers.get::<ContentType>(),
             html5ever::parse_document(RcDom::default(), Default::default())
@@ -48,7 +51,7 @@ pub fn handle(mut response: Response) -> Result<String> {
                 // TODO: Find more pieces of shit that behave shittily
                 if let Some("imgur.com") = response.url().domain() {
                     format!("[{}]", description)
-                } else if description.is_empty() || description == title {
+                } else if description.is_empty() || description == title && title != "" {
                     format!("[{}]", title)
                 } else {
                     format!("[{}: {}]", title, description)
@@ -56,13 +59,12 @@ pub fn handle(mut response: Response) -> Result<String> {
             }
             (Some(ct), _) => {
                 let ct = &ct.0;
-                format!("[{}: {}", ct.0.as_str(), ct.1.as_str())
+                format!("[{}: {}]", ct.0.as_str(), ct.1.as_str())
             }
             (None, Err(_)) => unimplemented!(),
         }
     } else {
-        // Most like e.g. an image
-        let headers = response.headers();
+        // Most likely an image or similar
         match (
             headers.get::<ContentType>().and_then(|ct| {
                 let ct = &ct.0;
@@ -70,7 +72,7 @@ pub fn handle(mut response: Response) -> Result<String> {
             }),
             headers.get::<ContentLength>(),
         ) {
-            (Some((ref top, ref sub)), Some(l)) => {
+            (Some((top, sub)), Some(l)) => {
                 format!(
                     "[{}: {}; {}]",
                     top,
@@ -78,42 +80,30 @@ pub fn handle(mut response: Response) -> Result<String> {
                     l.file_size(Options::CONVENTIONAL).unwrap()
                 )
             }
-            (Some((ref top, ref sub)), None) => format!("[{}: {}]", top, sub),
+            (Some((top, sub)), None) => format!("[{}: {}]", top, sub),
             (None, _) => unimplemented!(),
         }
     })
 }
 
-fn body_from_charsets(resp: &mut Response) -> Result<String> {
-    let mut body = String::new();
-    if let Some((_, ref charset)) =
-        resp.headers()
-            .get::<ContentType>()
-            .and_then(|ct| {
-                let ct = &ct.0;
-                ct.2.iter().find(|e| e.0 == Attr::Charset)
-            })
-            // FIXME: .cloned can go once NLL hits
-            .cloned()
-    {
+fn body_from_charsets(bytes: Vec<u8>, headers: &Headers) -> Result<String> {
+    Ok(if let Some(&(_, ref charset)) =
+        headers.get::<ContentType>().and_then(|ct| {
+            let ct = &ct.0;
+            ct.2.iter().find(|e| e.0 == Attr::Charset)
+        }) {
         if *charset == Value::Utf8 {
-            resp.read_to_string(&mut body)?;
+            String::from_utf8(bytes)?
         } else {
-            body.push_str(&encoding_from_whatwg_label(charset.as_str())
+            encoding_from_whatwg_label(charset.as_str())
                 .unwrap()
-                .decode(
-                    &resp.bytes()
-                        .collect::<::std::result::Result<Vec<u8>, _>>()
-                        .unwrap(),
-                    DecoderTrap::Replace,
-                )
-                .unwrap());
+                .decode(&bytes, DecoderTrap::Replace)
+                .unwrap()
         }
     } else {
         // Pray that it's utf8
-        resp.read_to_string(&mut body)?;
-    }
-    Ok(body)
+        String::from_utf8(bytes)?
+    })
 }
 
 fn walk(node: Handle, title: &mut String, description: &mut String) {
