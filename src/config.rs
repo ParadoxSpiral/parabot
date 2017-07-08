@@ -57,6 +57,7 @@ pub struct ServerCfg {
 pub struct ChannelCfg {
     pub name: String,
     pub password: Option<String>,
+    pub url_blacklisted_domains: Option<Vec<String>>,
     pub modules: Vec<String>,
 }
 

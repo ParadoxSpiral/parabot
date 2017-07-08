@@ -23,7 +23,7 @@ use html5ever::tendril::TendrilSink;
 use humansize::{FileSize, file_size_opts as Options};
 use reqwest::header::{ContentLength, ContentType, Headers};
 use reqwest::mime::{Attr, Value};
-use reqwest::Response;
+use reqwest::{Response, Url};
 
 use std::io::{Cursor, Read};
 
@@ -49,13 +49,7 @@ pub fn handle(mut response: Response) -> Result<String> {
             Some((&ct.0, &ct.1))
         }),
     ) {
-        (Ok(dom), _, _) => {
-            let mut title = String::new();
-            walk(dom.document, &mut title);
-
-            // TODO: More website specific stuff
-            Ok(format!("[{}]", title))
-        }
+        (Ok(dom), _, _) => Ok(format!("[{}]", website_specific(Some(dom), response.url()))),
         (Err(_), Some(l), Some((top, sub))) => {
             Ok(format!(
                 "[{}: {}; {}]",
@@ -85,18 +79,24 @@ fn body_from_charsets(bytes: Vec<u8>, headers: &Headers) -> Result<String> {
                 .unwrap()
         }
     } else {
-        // Pray that it's utf8
         String::from_utf8(bytes)?
     })
 }
 
+fn website_specific(dom: Option<RcDom>, url: &Url) -> String {
+    let mut title = String::new();
+    if let Some(dom) = dom {
+        walk(dom.document, &mut title);
+    } else {
+        unreachable!()
+    }
+
+    title
+}
+
 fn walk(node: Handle, title: &mut String) {
     match node.data {
-        NodeData::Element {
-            ref name,
-            ref attrs,
-            ..
-        } => {
+        NodeData::Element { ref name, .. } => {
             if &*name.local == "title" && title.is_empty() {
                 for child in node.children.borrow().iter() {
                     if let NodeData::Text { ref contents } = child.data {
