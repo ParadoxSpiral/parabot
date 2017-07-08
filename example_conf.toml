@@ -13,6 +13,7 @@ port = 6697
 	[[server.channel]]
 	name = "#c"
 	# optional: password = "channel_key"
+	# optional: url_blacklisted_domains = ["google.com"]
 	modules = ["url-info", "tell", "weather"]
 	[[server.channel]]
 	name = "#news"

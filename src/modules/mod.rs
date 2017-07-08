@@ -211,9 +211,26 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) -> R
                         let res = reqwest::get(&url);
                         if let Ok(res) = res {
                             if res.status().is_success() {
-                                let reply_target = msg.response_target().unwrap();
-                                let reply = url::handle(res)?;
-                                send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
+                                // FIXME: Can be made to (elegantly) not clone with NLL
+                                let domain = res.url().domain().unwrap().to_owned();
+                                if private ||
+                                    !cfg.channels.iter().any(|c| {
+                                        &*c.name == &*target &&
+                                            c.url_blacklisted_domains
+                                                .iter()
+                                                .any(|ds| ds.iter().any(|d| &*d == &*domain))
+                                    }) {
+                                    let reply_target = msg.response_target().unwrap();
+                                    let reply = url::handle(res)?;
+                                    send_segmented_message(
+                                        cfg,
+                                        srv,
+                                        log,
+                                        reply_target,
+                                        &reply,
+                                        false,
+                                    )?;
+                                }
                             }
                         } else {
                             trace!(log, "Failed reqwest; Res: {:?}", res);
