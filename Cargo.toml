@@ -25,6 +25,7 @@ authors = ["ParadoxSpiral <ParadoxSpiral@riseup.net>"]
 chrono = "0.4"
 chrono-tz = "0.4"
 crossbeam = "0.2"
+ddg = "0.4"
 diesel = { version = "0.13.0", features = ["sqlite"] }
 diesel_codegen = { version = "0.13.0", features = ["sqlite"] }
 encoding = "0.2"

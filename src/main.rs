@@ -21,6 +21,7 @@
 extern crate chrono;
 extern crate chrono_tz;
 extern crate crossbeam;
+extern crate ddg;
 extern crate encoding;
 extern crate forecast;
 extern crate html5ever;
@@ -74,6 +75,7 @@ mod errors {
             Reqwest(::reqwest::Error);
             Io(::std::io::Error);
             Utf8(::std::string::FromUtf8Error);
+            Ddg(::ddg::query::Error);
         }
         errors {
             NoExtractableData {

@@ -29,9 +29,10 @@ use std::collections::HashMap;
 use config::{Config, ServerCfg};
 use errors::*;
 
+mod ddg;
 mod help;
 mod tell;
-mod url;
+pub mod url;
 mod weather;
 
 const COMMAND_MODIFIER: char = '.';
@@ -150,6 +151,12 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) -> R
                 {
                     trace!(log, "Starting .tell");
                     let reply = tell::add(cfg, log, &msg, private)?;
+                    send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
+                } else if (private || module_enabled_channel(cfg, &*target, "duckduckgo")) &&
+                           content[1..].starts_with("ddg")
+                {
+                    trace!(log, "Starting .ddg");
+                    let reply = ddg::handle(log, content[4..].trim())?;
                     send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
                 } else if (private || module_enabled_channel(cfg, &*target, "weather")) &&
                            content[1..].starts_with("weather")
