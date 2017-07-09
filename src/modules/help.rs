@@ -20,8 +20,8 @@ use config::ServerCfg;
 pub fn handle(cfg: &ServerCfg, target: &str, msg: &str, private: bool) -> String {
     if &msg[1..] == "help" {
         if private {
-            "Hi! For more information, use .help <module>. In private (i.e. non channel mode) \
-             you can use these modules: `url-info`, `weather`, `tell`."
+            "Hi! For more information, use .help <module>. You can use these modules: \
+             `duckduckgo`, `url-info`, `weather`, `tell`."
                 .to_owned()
         } else {
             let mut modules = cfg.channels
@@ -42,6 +42,9 @@ pub fn handle(cfg: &ServerCfg, target: &str, msg: &str, private: bool) -> String
         match msg[6..].trim() {
             "bots" | ".bots" => {
                 ".bots will (hopefully) cause all bots in the channel to reply.".to_owned()
+            }
+            "ddg" | ".ddg" => {
+                ".ddg <search> uses ddg's instant answer API to perform a search.".to_owned()
             }
             "tell" | ".tell" => {
                 ".tell <nick> <message> will tell the user with <nick> <message>, \
@@ -70,10 +73,6 @@ pub fn handle(cfg: &ServerCfg, target: &str, msg: &str, private: bool) -> String
                 "Oi".to_owned()
             }
             "remind" | ".remind" => {
-                unimplemented!();
-                "Oi".to_owned()
-            }
-            "ddg" | ".ddg" => {
                 unimplemented!();
                 "Oi".to_owned()
             }
