@@ -18,11 +18,11 @@
 use ddg::{RelatedTopic, Type, Query};
 use ddg::response::TopicResult;
 use reqwest;
-use slog::Logger;
 
+use config::ServerCfg;
 use errors::*;
 
-pub fn handle(log: &Logger, msg: &str) -> Result<String> {
+pub fn handle(cfg: &ServerCfg, msg: &str, show_redirect: bool) -> Result<String> {
     let resp = Query::new(msg, "parabot").execute()?;
 
     match resp.response_type {
@@ -56,18 +56,21 @@ pub fn handle(log: &Logger, msg: &str) -> Result<String> {
             Ok(ret)
         }
         Type::Article | Type::Name => Ok(format!("{}: {}", resp.abstract_url, resp.abstract_text)),
-        Type::Nothing | Type::Exclusive => {
-            if !resp.redirect.is_empty() {
-                let res = reqwest::get(&resp.redirect);
-                if let Ok(res) = res {
-                    if res.status().is_success() {
-                        return Ok(format!("{}: ", resp.redirect) + &super::url::handle(res)?);
+        Type::Exclusive => {
+            let res = reqwest::get(&resp.redirect);
+            if let Ok(res) = res {
+                if res.status().is_success() {
+                    if show_redirect {
+                        return Ok(
+                            format!("{}: ", resp.redirect) + &super::url::handle(cfg, res)?,
+                        );
+                    } else {
+                        return Ok(super::url::handle(cfg, res)?);
                     }
                 }
-                Err(ErrorKind::NoExtractableData.into())
-            } else {
-                unimplemented!("{:?}", resp)
             }
+            Err(ErrorKind::NoExtractableData.into())
         }
+        Type::Nothing => unimplemented!("{:?}", resp),
     }
 }

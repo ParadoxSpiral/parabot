@@ -17,9 +17,9 @@ The list of modules is as follows:
 * tell: tell another user something when they or the bot join a shared channel.
 * url-info: reply to URLs with some metadata
 * weather: get weather information of a location
+* wolfram-alpha: send a query to [WolframAlpha](https://www.wolframalpha.com/)
 
 The list of planned modules is as follows:
-* wolfram-alpha: send a query to [WolframAlpha](https://www.wolframalpha.com/)
 * syncplay: manage [syncplay](http://syncplay.pl/) group watch sessions
 * remind: let the bot remind you of something at some time
 * sed: do stream edit like operations on your previous messages
