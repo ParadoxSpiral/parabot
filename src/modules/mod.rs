@@ -156,14 +156,29 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) -> R
                            content[1..].starts_with("ddg")
                 {
                     trace!(log, "Starting .ddg");
-                    let reply = ddg::handle(cfg, content[4..].trim(), true)?;
+                    let reply = ddg::handle(cfg, content[4..].trim(), true, None)?;
                     send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
-                } else if (private || module_enabled_channel(cfg, &*target, "duckduckgo")) &&
+                } else if (private || module_enabled_channel(cfg, &*target, "wolframalpha")) &&
                            content[1..].starts_with("wa")
                 {
                     trace!(log, "Starting .ddg !wa");
-                    let reply =
-                        ddg::handle(cfg, &("!wa ".to_owned() + content[3..].trim()), false)?;
+                    let reply = ddg::handle(
+                        cfg,
+                        &("!wa ".to_owned() + content[3..].trim()),
+                        false,
+                        Some("!wa "),
+                    )?;
+                    send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
+                } else if (private || module_enabled_channel(cfg, &*target, "jisho")) &&
+                           content[1..].starts_with("jisho")
+                {
+                    trace!(log, "Starting .ddg !jisho");
+                    let reply = ddg::handle(
+                        cfg,
+                        &("!jisho ".to_owned() + content[6..].trim()),
+                        false,
+                        Some("!jisho "),
+                    )?;
                     send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
                 } else if (private || module_enabled_channel(cfg, &*target, "weather")) &&
                            content[1..].starts_with("weather")
@@ -235,7 +250,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) -> R
                                                 .any(|ds| ds.iter().any(|d| &*d == &*domain))
                                     }) {
                                     let reply_target = msg.response_target().unwrap();
-                                    let reply = url::handle(cfg, res)?;
+                                    let reply = url::handle(cfg, res, None)?;
                                     send_segmented_message(
                                         cfg,
                                         srv,

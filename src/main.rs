@@ -37,7 +37,6 @@ extern crate slog_term;
 extern crate threadpool;
 extern crate toml;
 extern crate unicode_segmentation;
-extern crate url;
 extern crate wolfram_alpha;
 
 #[macro_use]
@@ -71,7 +70,7 @@ mod errors {
     error_chain! {
         foreign_links {
             Irc(::irc::error::Error);
-            Serialization(::toml::de::Error);
+            Toml(::toml::de::Error);
             Diesel(::diesel::result::Error);
             DieselConn(::diesel::result::ConnectionError);
             Reqwest(::reqwest::Error);
@@ -79,6 +78,7 @@ mod errors {
             Utf8(::std::string::FromUtf8Error);
             Ddg(::ddg::query::Error);
             WolframAlpha(::wolfram_alpha::Error);
+            Json(::serde_json::Error);
         }
         errors {
             NoExtractableData {
