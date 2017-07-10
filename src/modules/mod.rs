@@ -156,7 +156,14 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) -> R
                            content[1..].starts_with("ddg")
                 {
                     trace!(log, "Starting .ddg");
-                    let reply = ddg::handle(log, content[4..].trim())?;
+                    let reply = ddg::handle(cfg, content[4..].trim(), true)?;
+                    send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
+                } else if (private || module_enabled_channel(cfg, &*target, "duckduckgo")) &&
+                           content[1..].starts_with("wa")
+                {
+                    trace!(log, "Starting .ddg !wa");
+                    let reply =
+                        ddg::handle(cfg, &("!wa ".to_owned() + content[3..].trim()), false)?;
                     send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
                 } else if (private || module_enabled_channel(cfg, &*target, "weather")) &&
                            content[1..].starts_with("weather")
@@ -228,7 +235,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) -> R
                                                 .any(|ds| ds.iter().any(|d| &*d == &*domain))
                                     }) {
                                     let reply_target = msg.response_target().unwrap();
-                                    let reply = url::handle(res)?;
+                                    let reply = url::handle(cfg, res)?;
                                     send_segmented_message(
                                         cfg,
                                         srv,
@@ -274,9 +281,9 @@ fn send_segmented_message(
     trace!(log, "Msg bytes: {}; Fix bytes: {}", msg_bytes, fix_bytes);
 
     let send = |msg: &str| if notice {
-        srv.send_notice(target, msg)
+        srv.send_notice(target, &msg.replace("\n", ""))
     } else {
-        srv.send_privmsg(target, msg)
+        srv.send_privmsg(target, &msg.replace("\n", ""))
     };
 
     if msg_bytes + fix_bytes <= MESSAGE_BYTES_LIMIT {

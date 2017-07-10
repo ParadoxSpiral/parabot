@@ -59,10 +59,6 @@ pub fn handle(cfg: &ServerCfg, target: &str, msg: &str, private: bool) -> String
                  the location you last used will be used."
                     .to_owned()
             }
-            "wa" | ".wa" => {
-                unimplemented!();
-                ".wa <query> will query wolfram-alpha about <query>.".to_owned()
-            }
             "url-info" | "url" => {
                 "url-info fetches urls posted in the channel and displays their metadata, and, \
                  depending on the website, more e.g. youtube views."

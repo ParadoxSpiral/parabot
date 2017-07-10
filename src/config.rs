@@ -46,6 +46,7 @@ pub struct ServerCfg {
     pub weather_secret: Option<String>,
     #[serde(rename = "geocoding_api_key")]
     pub geocoding_key: Option<String>,
+    pub wolframalpha_appid: Option<String>,
     pub max_burst_messages: Option<u32>,
     pub burst_window_length: Option<u32>,
     #[serde(rename = "channel")]
@@ -115,6 +116,17 @@ pub fn parse_config(input: &str) -> Result<Config> {
                 "Weather modules enabled on {:?}, but no weather API secret or geocoding key given",
                 &srv.address
             ).into());
+        } else if srv.wolframalpha_appid.is_none() &&
+                   srv.channels
+                       .iter()
+                       .any(|c| c.modules.iter().any(|m| m == "wolframaplha"))
+        {
+            return Err(
+                format!(
+                    "Wolframalpha modules enabled on {:?}, but no appid given",
+                    &srv.address
+                ).into(),
+            );
         }
     }
     Ok(ret)

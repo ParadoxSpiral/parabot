@@ -37,6 +37,8 @@ extern crate slog_term;
 extern crate threadpool;
 extern crate toml;
 extern crate unicode_segmentation;
+extern crate url;
+extern crate wolfram_alpha;
 
 #[macro_use]
 extern crate diesel;
@@ -76,6 +78,7 @@ mod errors {
             Io(::std::io::Error);
             Utf8(::std::string::FromUtf8Error);
             Ddg(::ddg::query::Error);
+            WolframAlpha(::wolfram_alpha::Error);
         }
         errors {
             NoExtractableData {

@@ -23,44 +23,77 @@ use html5ever::tendril::TendrilSink;
 use humansize::{FileSize, file_size_opts as Options};
 use reqwest::header::{ContentLength, ContentType, Headers};
 use reqwest::mime::{Attr, Value};
-use reqwest::{Response, Url};
+use reqwest::Response;
+use url;
+use wolfram_alpha::query;
 
+use std::borrow::Borrow;
 use std::io::{Cursor, Read};
 
+use config::ServerCfg;
 use errors::*;
 
-pub fn handle(mut response: Response) -> Result<String> {
-    let mut bytes = Vec::new();
-    response.read_to_end(&mut bytes)?;
-    let headers = response.headers();
-    let body = body_from_charsets(bytes, headers).and_then(|body| Ok(Cursor::new(body)));
+pub fn handle(cfg: &ServerCfg, mut response: Response) -> Result<String> {
+    let domain = response.url().domain().unwrap().to_owned();
 
-    match (
-        body.and_then(|mut body| {
-            Ok(html5ever::parse_document(
-                RcDom::default(),
-                Default::default(),
-            ).from_utf8()
-                .read_from(&mut body)?)
-        }),
-        headers.get::<ContentLength>(),
-        headers.get::<ContentType>().and_then(|ct| {
-            let ct = &ct.0;
-            Some((&ct.0, &ct.1))
-        }),
-    ) {
-        (Ok(dom), _, _) => Ok(format!("[{}]", website_specific(Some(dom), response.url()))),
-        (Err(_), Some(l), Some((top, sub))) => {
-            Ok(format!(
-                "[{}: {}; {}]",
-                top,
-                sub,
-                l.file_size(Options::CONVENTIONAL).unwrap()
-            ))
+    // Invoke either site specific or generic handler
+    if domain.ends_with("wolframalpha.com") {
+        let resp = query::query(
+            None,
+            cfg.wolframalpha_appid.as_ref().unwrap(),
+            url::form_urlencoded::parse(response.url().query().unwrap().as_bytes())
+                .next()
+                .unwrap()
+                .1
+                .borrow(),
+            Some(query::QueryParameters {
+                includepodid: Some("Result"),
+                reinterpret: Some("true"),
+                ..Default::default()
+            }),
+        )?;
+        if let Some(pods) = resp.pods {
+            Ok(pods[0].subpods[0].plaintext.clone().unwrap())
+        } else {
+            Err(ErrorKind::NoExtractableData.into())
         }
-        (_, None, Some((top, sub))) => Ok(format!("[{}: {}]", top, sub)),
-        (Err(_), None, None) |
-        (Err(_), Some(_), None) => Err(ErrorKind::NoExtractableData.into()),
+    } else {
+        let mut bytes = Vec::new();
+        response.read_to_end(&mut bytes)?;
+        let headers = response.headers();
+        let body = body_from_charsets(bytes, headers).and_then(|body| Ok(Cursor::new(body)));
+
+        match (
+            body.and_then(|mut body| {
+                Ok(html5ever::parse_document(
+                    RcDom::default(),
+                    Default::default(),
+                ).from_utf8()
+                    .read_from(&mut body)?)
+            }),
+            headers.get::<ContentLength>(),
+            headers.get::<ContentType>().and_then(|ct| {
+                let ct = &ct.0;
+                Some((&ct.0, &ct.1))
+            }),
+        ) {
+            (Ok(dom), _, _) => {
+                let mut title = String::new();
+                walk_for_title(dom.document, &mut title);
+                Ok(format!("[{}]", title))
+            }
+            (Err(_), Some(l), Some((top, sub))) => {
+                Ok(format!(
+                    "[{}: {}; {}]",
+                    top,
+                    sub,
+                    l.file_size(Options::CONVENTIONAL).unwrap()
+                ))
+            }
+            (_, None, Some((top, sub))) => Ok(format!("[{}: {}]", top, sub)),
+            (Err(_), None, None) |
+            (Err(_), Some(_), None) => Err(ErrorKind::NoExtractableData.into()),
+        }
     }
 }
 
@@ -83,18 +116,7 @@ fn body_from_charsets(bytes: Vec<u8>, headers: &Headers) -> Result<String> {
     })
 }
 
-fn website_specific(dom: Option<RcDom>, url: &Url) -> String {
-    let mut title = String::new();
-    if let Some(dom) = dom {
-        walk(dom.document, &mut title);
-    } else {
-        unreachable!()
-    }
-
-    title
-}
-
-fn walk(node: Handle, title: &mut String) {
+fn walk_for_title(node: Handle, title: &mut String) {
     match node.data {
         NodeData::Element { ref name, .. } => {
             if &*name.local == "title" && title.is_empty() {
@@ -116,6 +138,6 @@ fn walk(node: Handle, title: &mut String) {
         NodeData::Text { .. } => {}
     }
     for child in node.children.borrow().iter() {
-        walk(child.clone(), title);
+        walk_for_title(child.clone(), title);
     }
 }
