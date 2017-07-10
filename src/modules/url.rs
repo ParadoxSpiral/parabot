@@ -24,28 +24,23 @@ use humansize::{FileSize, file_size_opts as Options};
 use reqwest::header::{ContentLength, ContentType, Headers};
 use reqwest::mime::{Attr, Value};
 use reqwest::Response;
-use url;
 use wolfram_alpha::query;
 
-use std::borrow::Borrow;
 use std::io::{Cursor, Read};
 
 use config::ServerCfg;
 use errors::*;
 
-pub fn handle(cfg: &ServerCfg, mut response: Response) -> Result<String> {
+pub fn handle(cfg: &ServerCfg, mut response: Response, query: Option<&str>) -> Result<String> {
     let domain = response.url().domain().unwrap().to_owned();
 
     // Invoke either site specific or generic handler
+    // FIXME: Specific handlers will now fail if url is posted
     if domain.ends_with("wolframalpha.com") {
         let resp = query::query(
             None,
             cfg.wolframalpha_appid.as_ref().unwrap(),
-            url::form_urlencoded::parse(response.url().query().unwrap().as_bytes())
-                .next()
-                .unwrap()
-                .1
-                .borrow(),
+            query.unwrap(),
             Some(query::QueryParameters {
                 includepodid: Some("Result"),
                 reinterpret: Some("true"),
@@ -57,6 +52,8 @@ pub fn handle(cfg: &ServerCfg, mut response: Response) -> Result<String> {
         } else {
             Err(ErrorKind::NoExtractableData.into())
         }
+    } else if domain.ends_with("jisho.org") {
+        jisho::handle(query.unwrap())
     } else {
         let mut bytes = Vec::new();
         response.read_to_end(&mut bytes)?;
@@ -139,5 +136,133 @@ fn walk_for_title(node: Handle, title: &mut String) {
     }
     for child in node.children.borrow().iter() {
         walk_for_title(child.clone(), title);
+    }
+}
+
+mod jisho {
+    use reqwest;
+    use serde_json;
+
+    use std::io::Read;
+
+    use errors::*;
+
+    const API_BASE: &str = "http://jisho.org/api/v1/search/words?keyword=";
+
+    #[derive(Clone, Debug, PartialEq, Deserialize)]
+    pub struct ApiResponse {
+        pub meta: Meta,
+        pub data: Vec<DataPoint>,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Deserialize)]
+    pub struct Meta {
+        pub status: usize,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Deserialize)]
+    pub struct DataPoint {
+        pub is_common: Option<bool>,
+        pub tags: Vec<String>,
+        pub japanese: Vec<Japanese>,
+        pub senses: Vec<Senses>,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Deserialize)]
+    pub struct Japanese {
+        pub word: Option<String>,
+        pub reading: Option<String>,
+    }
+
+    #[derive(Clone, Debug, PartialEq, Deserialize)]
+    pub struct Senses {
+        pub english_definitions: Vec<String>,
+        pub parts_of_speech: Vec<String>,
+    }
+
+    pub fn handle(input: &str) -> Result<String> {
+        let mut resp = reqwest::get(&(API_BASE.to_owned() + input))?;
+        let resp = if resp.status().is_success() {
+            let mut body = String::new();
+            resp.read_to_string(&mut body)?;
+            let resp: ApiResponse = serde_json::from_str(&body)?;
+            if resp.meta.status == 200 {
+                resp.data
+            } else {
+                return Err(ErrorKind::NoExtractableData.into());
+            }
+        } else {
+            return Err(ErrorKind::NoExtractableData.into());
+        };
+
+        let mut ret = String::new();
+        for (n, dp) in resp.iter().take(3).enumerate() {
+            if n == 0 {
+                ret.push_str("\x021\x02: ");
+            } else {
+                ret.push_str(&format!("; \x02{}\x02: ", n + 1));
+            }
+            let mut senses = String::new();
+            for (n, s) in dp.senses.iter().take(3).enumerate() {
+                let mut parts_of_speech = String::new();
+                for (n, p) in s.parts_of_speech.iter().enumerate() {
+                    if n == 0 {
+                        parts_of_speech.push_str(&p);
+                    } else {
+                        parts_of_speech.push_str(&format!(", {}", p));
+                    }
+                }
+                if n == 0 {
+                    senses.push_str(&format!(
+                        "{}: {}",
+                        &parts_of_speech,
+                        &s.english_definitions[0]
+                    ));
+                } else {
+                    senses.push_str(&format!(", {}", &s.english_definitions[0]));
+                }
+            }
+            if let Some(ref w) = dp.japanese[0].word {
+                ret.push_str(w);
+                if let Some(ref r) = dp.japanese[0].reading {
+                    ret.push_str(&format!("({})", r));
+                }
+            } else if let Some(ref r) = dp.japanese[0].reading {
+                ret.push_str(r);
+            }
+
+            ret.push_str(&format!(
+                " {}{} [{}]",
+                if let Some(c) = dp.is_common {
+                    if c {
+                        "Common"
+                    } else {
+                        "Uncommon"
+                    }
+                } else {
+                    ""
+                },
+                if dp.tags.is_empty() {
+                    "".into()
+                } else {
+                    let mut out = String::from("(");
+                    for (n, t) in dp.tags.iter().enumerate() {
+                        if n == 0 {
+                            out.push_str(&format!("{}", t));
+                        } else {
+                            out.push_str(&format!(", {}", t));
+                        }
+                    }
+                    out.push_str(")");
+                    out
+                },
+                &senses,
+            ));
+        }
+        if ret != "" {
+            Ok(ret)
+        } else {
+            Err(ErrorKind::NoExtractableData.into())
+        }
     }
 }

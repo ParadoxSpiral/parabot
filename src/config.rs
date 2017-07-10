@@ -103,9 +103,7 @@ impl ServerCfg {
 }
 
 pub fn parse_config(input: &str) -> Result<Config> {
-    let ret: Result<Config> = de::from_str::<Config>(input)
-        .or_else(|err| Err(ErrorKind::Serialization(err).into()));
-    let ret = ret?;
+    let ret = de::from_str::<Config>(input)?;
     for srv in &ret.servers {
         if (srv.weather_secret.is_none() || srv.geocoding_key.is_none()) &&
             srv.channels
