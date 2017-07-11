@@ -35,6 +35,7 @@ humansize = "1.0"
 irc = "0.12"
 lazy_static = "0.2"
 parking_lot = {version = "0.4", features = ["nightly"]}
+percent-encoding = "1.0"
 regex = "0.2"
 reqwest = "0.6"
 serde = "1.0"

@@ -21,26 +21,31 @@ use html5ever;
 use html5ever::rcdom::{NodeData, RcDom, Handle};
 use html5ever::tendril::TendrilSink;
 use humansize::{FileSize, file_size_opts as Options};
+use percent_encoding::percent_decode;
 use reqwest::header::{ContentLength, ContentType, Headers};
 use reqwest::mime::{Attr, Value};
 use reqwest::Response;
 use wolfram_alpha::query;
 
+use std::borrow::Borrow;
 use std::io::{Cursor, Read};
 
 use config::ServerCfg;
 use errors::*;
 
-pub fn handle(cfg: &ServerCfg, mut response: Response, query: Option<&str>) -> Result<String> {
+pub fn handle(cfg: &ServerCfg, mut response: Response) -> Result<String> {
     let domain = response.url().domain().unwrap().to_owned();
 
     // Invoke either site specific or generic handler
-    // FIXME: Specific handlers will now fail if url is posted
     if domain.ends_with("wolframalpha.com") {
+        let query = percent_decode(response.url().query().unwrap().as_bytes())
+            .decode_utf8()?;
+        let query: &str = query.borrow();
+        assert_eq!("i=", &query[..2]);
         let resp = query::query(
             None,
             cfg.wolframalpha_appid.as_ref().unwrap(),
-            query.unwrap(),
+            &query[2..],
             Some(query::QueryParameters {
                 includepodid: Some("Result"),
                 reinterpret: Some("true"),
@@ -48,12 +53,24 @@ pub fn handle(cfg: &ServerCfg, mut response: Response, query: Option<&str>) -> R
             }),
         )?;
         if let Some(pods) = resp.pods {
+            println!("{:?}", &pods[0].subpods[0].plaintext);
             Ok(pods[0].subpods[0].plaintext.clone().unwrap())
         } else {
             Err(ErrorKind::NoExtractableData.into())
         }
     } else if domain.ends_with("jisho.org") {
-        jisho::handle(query.unwrap())
+        jisho::handle(
+            percent_decode(
+                response
+                    .url()
+                    .path_segments()
+                    .unwrap()
+                    .last()
+                    .unwrap()
+                    .as_bytes(),
+            ).decode_utf8()?
+                .borrow(),
+        )
     } else {
         let mut bytes = Vec::new();
         response.read_to_end(&mut bytes)?;

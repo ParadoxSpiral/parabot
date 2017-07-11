@@ -28,6 +28,7 @@ extern crate html5ever;
 extern crate humansize;
 extern crate irc;
 extern crate parking_lot;
+extern crate percent_encoding;
 extern crate regex;
 extern crate reqwest;
 extern crate serde;
@@ -75,7 +76,8 @@ mod errors {
             DieselConn(::diesel::result::ConnectionError);
             Reqwest(::reqwest::Error);
             Io(::std::io::Error);
-            Utf8(::std::string::FromUtf8Error);
+            Utf8String(::std::string::FromUtf8Error);
+            Utf8Str(::std::str::Utf8Error);
             Ddg(::ddg::query::Error);
             WolframAlpha(::wolfram_alpha::Error);
             Json(::serde_json::Error);
