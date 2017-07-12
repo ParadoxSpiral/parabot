@@ -35,7 +35,7 @@ pub fn handle(
             let mut ret = String::new();
             for (n, related) in resp.related_topics
                 .iter()
-                .filter(|rt| if let &&RelatedTopic::TopicResult { .. } = rt {
+                .filter(|rt| if let &RelatedTopic::TopicResult { .. } = *rt {
                     true
                 } else {
                     false
@@ -43,7 +43,7 @@ pub fn handle(
                 .take(3)
                 .enumerate()
             {
-                if let &RelatedTopic::TopicResult(TopicResult { ref text, .. }) = related {
+                if let RelatedTopic::TopicResult(TopicResult { ref text, .. }) = *related {
                     if n == 0 {
                         if resp.response_type == Type::Disambiguation {
                             ret.push_str(&format!("\x021:\x02 {}", text));

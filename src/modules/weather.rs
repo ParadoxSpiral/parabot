@@ -531,7 +531,7 @@ pub fn handle(
         }
     };
     let format_alerts = |out: &mut String, alerts: &Option<Vec<Alert>>| -> Result<()> {
-        if let &Some(ref alerts) = alerts {
+        if let Some(ref alerts) = *alerts {
             let utc_now = Utc::now();
             let timezone: Tz = res.timezone.parse().unwrap();
             let range_adjustment = if days {
