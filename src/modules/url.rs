@@ -43,16 +43,21 @@ pub fn handle(cfg: &ServerCfg, mut response: Response, regex_match: bool) -> Res
     if domain.ends_with("youtube.com") || domain.ends_with("youtu.be") {
         let path = response.url().path_segments().unwrap().last().unwrap();
         let mut query = response.url().query_pairs();
-        if path == "watch" {
+        if path == "watch" || domain.ends_with("youtu.be") {
             let mut body = String::new();
+            let v = query
+                .find(|&(ref k, _)| if k == "v" { true } else { false })
+                .unwrap()
+                .1;
             let mut resp = reqwest::get(&format!(
-                "https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,\
+                "https://www.googleapis.com/youtube/v3/videos?part=status,snippet,contentDetails,\
                  statistics&key={}&id={}",
                 cfg.youtube_key.as_ref().unwrap(),
-                query
-                    .find(|&(ref k, _)| if k == "v" { true } else { false })
-                    .unwrap()
-                    .1
+                if domain.ends_with("youtube.com") {
+                    v.as_ref()
+                } else {
+                    path
+                }
             ))?;
             resp.read_to_string(&mut body)?;
             let resp: JValue = serde_json::from_str(&body)?;
@@ -68,26 +73,49 @@ pub fn handle(cfg: &ServerCfg, mut response: Response, regex_match: bool) -> Res
                 .unwrap()
                 .as_str()
                 .unwrap();
+            let definition = resp.pointer("/items/0/contentDetails/definition")
+                .unwrap()
+                .as_str()
+                .unwrap();
+            let dimension = resp.pointer("/items/0/contentDetails/dimension")
+                .unwrap()
+                .as_str()
+                .unwrap();
+            let restricted = resp.pointer("/items/0/contentDetails/regionRestriction/blocked")
+                .is_some();
+            let ratings_disabled = !resp.pointer("/items/0/status/publicStatsViewable")
+                .unwrap()
+                .as_bool()
+                .unwrap();
             let views = resp.pointer("/items/0/statistics/viewCount")
                 .unwrap()
                 .as_str()
                 .unwrap();
-            let likes = resp.pointer("/items/0/statistics/likeCount")
-                .unwrap()
-                .as_str()
-                .unwrap();
-            let dislikes = resp.pointer("/items/0/statistics/dislikeCount")
-                .unwrap()
-                .as_str()
-                .unwrap();
             Ok(format!(
-                "^ {}: {} ({}; {} +{}/-{})",
-                channel,
+                "^ {} [{}] ({}) {} views {}{}{}",
                 title,
                 duration.replace('P', "").replace('T', "").to_lowercase(),
+                channel,
                 pretty_number(views),
-                pretty_number(likes),
-                pretty_number(dislikes)
+                definition.to_uppercase(),
+                {
+                    if dimension == "3d" {
+                        " (3D)"
+                    } else {
+                        ""
+                    }
+                },
+                {
+                    if restricted && ratings_disabled {
+                        " [Region restricted|Ratings disabled]"
+                    } else if restricted {
+                        " [Region restricted]"
+                    } else if ratings_disabled  {
+                        " [Ratings disabled]"
+                    } else {
+                        ""
+                    }
+                }
             ))
         } else if path == "results" {
             unimplemented!()
@@ -166,10 +194,10 @@ pub fn handle(cfg: &ServerCfg, mut response: Response, regex_match: bool) -> Res
                         Ok(format!("^ {}", title))
                     } else {
                         if description.starts_with(&title) || description.ends_with(&title) {
-                            Ok(format!("^ {}", description))    
+                            Ok(format!("^ {}", description))
                         } else {
                             Ok(format!("^ {} - {}", title, description))
-                        }                        
+                        }
                     }
                 }
             }
@@ -203,7 +231,7 @@ fn pretty_number(num: &str) -> String {
             ret.push(x.unwrap());
             ret.push(y.unwrap());
             ret.push(z.unwrap());
-            ret.push_str(".");
+            ret.push('.');
         } else if x.is_some() && y.is_some() && z.is_some() {
             ret.push(x.unwrap());
             ret.push(y.unwrap());
