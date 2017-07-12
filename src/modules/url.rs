@@ -185,11 +185,20 @@ pub fn handle(cfg: &ServerCfg, mut response: Response, regex_match: bool) -> Res
         ) {
             (Ok(dom), _, _) => {
                 let mut title = String::new();
-                walk_for_title(dom.document, &mut title);
+                let mut description = String::new();
+                walk_for_metadata(dom.document, &mut title, &mut description);
                 if title.trim().is_empty() {
                     Err(ErrorKind::NoExtractableData.into())
                 } else {
-                    Ok(format!("^ {}", title))
+                    if description.is_empty() || domain.ends_with("imgur.com") {
+                        Ok(format!("^ {}", title))
+                    } else {
+                        if description.starts_with(&title) || description.ends_with(&title) {
+                            Ok(format!("^ {}", description))
+                        } else {
+                            Ok(format!("^ {} - {}", title, description))
+                        }
+                    }
                 }
             }
             (Err(_), Some(l), Some((top, sub))) => {
@@ -256,9 +265,13 @@ fn body_from_charsets(bytes: Vec<u8>, headers: &Headers) -> Result<String> {
     })
 }
 
-fn walk_for_title(node: Handle, title: &mut String) {
+fn walk_for_metadata(node: Handle, title: &mut String, description: &mut String) {
     match node.data {
-        NodeData::Element { ref name, .. } => {
+        NodeData::Element {
+            ref name,
+            ref attrs,
+            ..
+        } => {
             if &*name.local == "title" && title.is_empty() {
                 for child in node.children.borrow().iter() {
                     if let NodeData::Text { ref contents } = child.data {
@@ -267,6 +280,16 @@ fn walk_for_title(node: Handle, title: &mut String) {
                         if text != "" && text != "\n" {
                             title.push_str(text);
                         }
+                    }
+                }
+            } else if &*name.local == "meta" {
+                let mut in_description = false;
+                for attr in attrs.borrow().iter() {
+                    if &*attr.name.local == "name" && &*attr.value == "description" {
+                        in_description = true;
+                    } else if &*attr.name.local == "content" && in_description {
+                        in_description = false;
+                        description.push_str(attr.value.trim());
                     }
                 }
             }
@@ -278,7 +301,7 @@ fn walk_for_title(node: Handle, title: &mut String) {
         NodeData::Text { .. } => {}
     }
     for child in node.children.borrow().iter() {
-        walk_for_title(child.clone(), title);
+        walk_for_metadata(child.clone(), title, description);
     }
 }
 
