@@ -61,16 +61,9 @@ pub fn handle(cfg: &ServerCfg, target: &str, msg: &str, private: bool) -> String
             }
             "url-info" | "url" => {
                 "url-info fetches urls posted in the channel and displays their metadata, and, \
-                 depending on the website, more e.g. youtube views."
+                 depending on the website, more. Current additional metadata: wolframalpha, jisho, \
+                 youtube."
                     .to_owned()
-            }
-            "syncplay" | ".syncplay" => {
-                unimplemented!();
-                "Oi".to_owned()
-            }
-            "remind" | ".remind" => {
-                unimplemented!();
-                "Oi".to_owned()
             }
             _ => "Unknown or undocumented module, sorry.".to_owned(),
         }

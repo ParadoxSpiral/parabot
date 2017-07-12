@@ -6,6 +6,8 @@ Have nightly rust installed, preferably via rustup.rs
 
 Compile with ```$ rustup run nightly cargo build --release```, or ```$ rustup run nightly cargo rustc --release -- -C lto```.
 
+The additional dependencies (on debian) are `libssl-dev` and `pkg-config`.
+
 Run with ```$ target/release/parabot /path/to/config```, see exaple_config.toml for an example configuration.
 
 parabot uses an sqlite3 database for persistence, to integrate into an existing db run all ```up.sql``` files in the ```migrations/*``` directories, or ```down.sql``` to add/remove tables. The ```parabot_empty.db``` can be used as a fresh db with all migrations pre-applied, but do not use it directly, because it will change if new migrations are added.
