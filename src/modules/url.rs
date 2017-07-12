@@ -92,7 +92,7 @@ pub fn handle(cfg: &ServerCfg, mut response: Response, regex_match: bool) -> Res
                 .as_str()
                 .unwrap();
             Ok(format!(
-                "^ {} [{}] ({}) {} views {}{}{}",
+                "┗━ {} [{}] ({}) {} views {}{}{}",
                 title,
                 duration.replace('P', "").replace('T', "").to_lowercase(),
                 channel,
@@ -140,7 +140,7 @@ pub fn handle(cfg: &ServerCfg, mut response: Response, regex_match: bool) -> Res
         if let Some(pods) = resp.pods {
             if regex_match {
                 Ok(format!(
-                    "^ {}",
+                    "┗━ {}",
                     pods[0].subpods[0].plaintext.as_ref().unwrap()
                 ))
             } else {
@@ -191,25 +191,25 @@ pub fn handle(cfg: &ServerCfg, mut response: Response, regex_match: bool) -> Res
                     Err(ErrorKind::NoExtractableData.into())
                 } else {
                     if description.is_empty() || domain.ends_with("imgur.com") {
-                        Ok(format!("^ {}", title))
+                        Ok(format!("┗━ {}", title))
                     } else {
                         if description.starts_with(&title) || description.ends_with(&title) {
-                            Ok(format!("^ {}", description))
+                            Ok(format!("┗━ {}", description))
                         } else {
-                            Ok(format!("^ {} - {}", title, description))
+                            Ok(format!("┗━ {} - {}", title, description))
                         }
                     }
                 }
             }
             (Err(_), Some(l), Some((top, sub))) => {
                 Ok(format!(
-                    "^ {}: {}; {}",
+                    "┗━ {}: {}; {}",
                     top,
                     sub,
                     l.file_size(Options::BINARY).unwrap()
                 ))
             }
-            (_, None, Some((top, sub))) => Ok(format!("^ {}: {}", top, sub)),
+            (_, None, Some((top, sub))) => Ok(format!("┗━ {}: {}", top, sub)),
             (Err(_), None, None) |
             (Err(_), Some(_), None) => Err(ErrorKind::NoExtractableData.into()),
         }
@@ -218,32 +218,13 @@ pub fn handle(cfg: &ServerCfg, mut response: Response, regex_match: bool) -> Res
 
 fn pretty_number(num: &str) -> String {
     let mut ret = String::with_capacity(num.len() + num.len() / 3);
-    let mut iter = num.chars().rev().peekable();
-    while {
-        let x = iter.peek();
-        x.is_some()
-    } {
-        let x = iter.next();
-        let y = iter.next();
-        let z = iter.next();
-        let a = iter.peek();
-        if x.is_some() && y.is_some() && z.is_some() && a.is_some() {
-            ret.push(x.unwrap());
-            ret.push(y.unwrap());
-            ret.push(z.unwrap());
-            ret.push('.');
-        } else if x.is_some() && y.is_some() && z.is_some() {
-            ret.push(x.unwrap());
-            ret.push(y.unwrap());
-            ret.push(z.unwrap());
-        } else if x.is_some() && y.is_some() {
-            ret.push(x.unwrap());
-            ret.push(y.unwrap());
-        } else {
-            ret.push(x.unwrap());
+    for (n, e) in num.chars().rev().enumerate() {
+        ret.insert(0, e);
+        if (n+1) % 3 == 0 && n != 0 {
+            ret.insert(0, ',');
         }
     }
-    ret.chars().rev().collect()
+    ret
 }
 
 fn body_from_charsets(bytes: Vec<u8>, headers: &Headers) -> Result<String> {
@@ -362,7 +343,7 @@ mod jisho {
         };
 
         let mut ret = if regex_match {
-            String::from("^ ")
+            String::from("┗━ ")
         } else {
             String::new()
         };
