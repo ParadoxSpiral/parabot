@@ -51,8 +51,7 @@ pub fn init(cfg: &Config, log: &Logger) -> Result<()> {
     weather::init(cfg, log)
 }
 
-#[allow(needless_pass_by_value)]
-pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) -> Result<()> {
+pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> Result<()> {
     match msg.command {
         // Currently uninteresting messages
         Command::NOTICE(..) |
@@ -156,21 +155,29 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) -> R
                            content[1..].starts_with("ddg")
                 {
                     trace!(log, "Starting .ddg");
-                    let reply = ddg::handle(cfg, content[4..].trim(), true)?;
+                    let reply = ddg::handle(cfg, content[4..].trim(), true, false)?;
                     send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
                 } else if (private || module_enabled_channel(cfg, &*target, "wolframalpha")) &&
                            content[1..].starts_with("wa")
                 {
                     trace!(log, "Starting .ddg !wa");
-                    let reply =
-                        ddg::handle(cfg, &("!wa ".to_owned() + content[3..].trim()), false)?;
+                    let reply = ddg::handle(
+                        cfg,
+                        &("!wa ".to_owned() + content[3..].trim()),
+                        false,
+                        false,
+                    )?;
                     send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
                 } else if (private || module_enabled_channel(cfg, &*target, "jisho")) &&
                            content[1..].starts_with("jisho")
                 {
                     trace!(log, "Starting .ddg !jisho");
-                    let reply =
-                        ddg::handle(cfg, &("!jisho ".to_owned() + content[6..].trim()), false)?;
+                    let reply = ddg::handle(
+                        cfg,
+                        &("!jisho ".to_owned() + content[6..].trim()),
+                        false,
+                        false,
+                    )?;
                     send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
                 } else if (private || module_enabled_channel(cfg, &*target, "weather")) &&
                            content[1..].starts_with("weather")
@@ -242,7 +249,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: Message) -> R
                                                 .any(|ds| ds.iter().any(|d| &*d == &*domain))
                                     }) {
                                     let reply_target = msg.response_target().unwrap();
-                                    let reply = url::handle(cfg, res)?;
+                                    let reply = url::handle(cfg, res, true)?;
                                     send_segmented_message(
                                         cfg,
                                         srv,
@@ -288,9 +295,9 @@ fn send_segmented_message(
     trace!(log, "Msg bytes: {}; Fix bytes: {}", msg_bytes, fix_bytes);
 
     let send = |msg: &str| if notice {
-        srv.send_notice(target, &msg.replace("\n", ""))
+        srv.send_notice(target, &msg.replace("\n", " "))
     } else {
-        srv.send_privmsg(target, &msg.replace("\n", ""))
+        srv.send_privmsg(target, &msg.replace("\n", " "))
     };
 
     if msg_bytes + fix_bytes <= MESSAGE_BYTES_LIMIT {

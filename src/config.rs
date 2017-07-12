@@ -47,6 +47,8 @@ pub struct ServerCfg {
     #[serde(rename = "geocoding_api_key")]
     pub geocoding_key: Option<String>,
     pub wolframalpha_appid: Option<String>,
+    #[serde(rename = "youtube_api_key")]
+    pub youtube_key: Option<String>,
     pub max_burst_messages: Option<u32>,
     pub burst_window_length: Option<u32>,
     #[serde(rename = "channel")]
@@ -111,7 +113,7 @@ pub fn parse_config(input: &str) -> Result<Config> {
                 .any(|c| c.modules.iter().any(|m| m == "weather"))
         {
             return Err(format!(
-                "Weather modules enabled on {:?}, but no weather API secret or geocoding key given",
+                "Weather module enabled on {:?}, but no weather API secret or geocoding key given",
                 &srv.address
             ).into());
         } else if srv.wolframalpha_appid.is_none() &&
@@ -121,7 +123,18 @@ pub fn parse_config(input: &str) -> Result<Config> {
         {
             return Err(
                 format!(
-                    "Wolframalpha modules enabled on {:?}, but no appid given",
+                    "Wolframalpha module enabled on {:?}, but no appid given",
+                    &srv.address
+                ).into(),
+            );
+        } else if srv.youtube_key.is_none() &&
+                   srv.channels
+                       .iter()
+                       .any(|c| c.modules.iter().any(|m| m == "youtube"))
+        {
+            return Err(
+                format!(
+                    "Youtube module enabled on {:?}, but no key given",
                     &srv.address
                 ).into(),
             );

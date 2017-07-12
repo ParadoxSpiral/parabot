@@ -8,6 +8,7 @@ database = "parabot_empty.db" # Different servers may populate the same db
 # optional: weather_api_secret = "secret" a https://darksky.net API secret
 # optional: geocoding_api_key = "key" a https://developer.mapquest.com API key
 # optional: wolframalpha_appid = "appid" a https://www.wolframalpha.com/ appid
+# pütional: youtube_api_key = "key" a https://console.developers.google.com api key
 # optional: max_burst_messages = 4
 # optional: burst_window_length = 8 # Time between bursts in seconds
 port = 6697
@@ -15,7 +16,7 @@ port = 6697
 	name = "#c"
 	# optional: password = "channel_key"
 	# optional: url_blacklisted_domains = ["google.com"]
-	modules = ["duckduckgo", "jisho", "url-info", "tell", "wolframalpha", "weather"]
+	modules = ["duckduckgo", "jisho", "url-info", "tell", "wolframalpha", "weather", "youtube"]
 	[[server.channel]]
 	name = "#news"
 	modules = ["url-info", "weather"]

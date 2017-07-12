@@ -16,7 +16,6 @@
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
 #![feature(inclusive_range, inclusive_range_syntax)]
-#![allow(unknown_lints)]
 
 extern crate chrono;
 extern crate chrono_tz;
@@ -170,7 +169,7 @@ fn main() {
                 let cfg = cfg.clone();
                 let srv = srv2.clone();
                 let log = log.clone();
-                pool.execute(move || modules::handle(&cfg, &srv, &log, msg).unwrap());
+                pool.execute(move || modules::handle(&cfg, &srv, &log, &msg).unwrap());
             }).unwrap();
         });
     });
