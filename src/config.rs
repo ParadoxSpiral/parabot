@@ -51,6 +51,7 @@ pub struct ServerCfg {
     pub youtube_key: Option<String>,
     pub max_burst_messages: Option<u32>,
     pub burst_window_length: Option<u32>,
+    pub owners: Vec<String>,
     #[serde(rename = "channel")]
     pub channels: Vec<ChannelCfg>,
 }

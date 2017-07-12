@@ -25,6 +25,7 @@ use slog::Logger;
 use unicode_segmentation::UnicodeSegmentation;
 
 use std::collections::HashMap;
+use std::sync::atomic::Ordering;
 
 use config::{Config, ServerCfg};
 use errors::*;
@@ -113,13 +114,13 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                 // We don't check if the module is enabled, because it's our responsibility to
                 // deliver the msg asap without fail, even if the bot owner disabled the module;
                 // If they *really* want, they can clean the database
-                tell::handle_user_join(cfg, srv, log, &msg)?;
+                tell::handle_user_join(cfg, srv, log, msg)?;
             }
         }
         Command::Response(Response::RPL_NAMREPLY, ..) => {
             // The bot joined a channel, and asked for nicknames to see if they have any
             // pending tells. (NOTE: something, maybe the irc crate, asks automatically)
-            tell::handle_names_reply(cfg, srv, log, &msg)?;
+            tell::handle_names_reply(cfg, srv, log, msg)?;
         }
         Command::PRIVMSG(ref target, ref content) => {
             debug!(log, "PRIVMSG to {}: {}", target, content);
@@ -130,10 +131,12 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
             if content.chars().nth(0).unwrap() == COMMAND_MODIFIER {
                 if &content[1..] == "bots" || &content[1..] == "bot" {
                     trace!(log, "Replying to .bots");
-                    // TODO: Add owner config option/ bots reply
-                    let reply = "I am the slave of ParadoxSpiral… at least 123% safer & faster \
-                                 than m's & l's shit. For a list of commands, try `.help`";
-                    send_segmented_message(cfg, srv, log, reply_target, reply, false)?;
+                    let reply = format!(
+                        "I am the slave of {:?}… at least 123% safer & faster \
+                         than m's & l's shit. For a list of commands, try `.help`",
+                        &cfg.owners
+                    );
+                    send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
                 } else if content[1..].starts_with("help") {
                     trace!(log, "Replying to .help");
                     let reply = help::handle(cfg, &*target, content, private);
@@ -145,11 +148,21 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                         &reply,
                         true,
                     )?;
+                } else if &content[1..] == "exit" || &content[1..] == "quit" ||
+                           &content[1..] == "part"
+                {
+                    ::SHOULD_CONTINUE.store(false, Ordering::Release);
+                    // Make all sleeping threads act on this
+                    // TODO: Better impl would be to collect thread handles & wake them
+                    for _ in 0...unsafe { ::NUM_THREADS } {
+                        let _ = send_segmented_message(cfg, srv, log, &cfg.nickname, "", false);
+                    }
+                    return Err(ErrorKind::ExitRequested.into());
                 } else if (private || module_enabled_channel(cfg, &*target, "tell")) &&
                            content[1..].starts_with("tell")
                 {
                     trace!(log, "Starting .tell");
-                    let reply = tell::add(cfg, log, &msg, private)?;
+                    let reply = tell::add(cfg, log, msg, private)?;
                     send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
                 } else if (private || module_enabled_channel(cfg, &*target, "duckduckgo")) &&
                            content[1..].starts_with("ddg")

@@ -5,6 +5,7 @@ nickname = "parabot"
 nickserv_password = "test123"
 # optional: server_password = "test123"
 database = "parabot_empty.db" # Different servers may populate the same db
+owners = ["nick1", "nick2"] # a list of nicks that may exec priviledged cmds
 # optional: weather_api_secret = "secret" a https://darksky.net API secret
 # optional: geocoding_api_key = "key" a https://developer.mapquest.com API key
 # optional: wolframalpha_appid = "appid" a https://www.wolframalpha.com/ appid

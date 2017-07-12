@@ -386,15 +386,15 @@ pub fn handle(
             .unwrap();
         let mut revl = String::new();
         if city != "" {
-            revl.push_str(city);
+            revl.push_str(&format!("{}, ", city));
         }
         if state != "" {
-            revl.push_str(state);
+            revl.push_str(&format!("{}, ", state));
         } else if county != "" {
-            revl.push_str(county);
+            revl.push_str(&format!("{}, ", county));
         }
         if country != "" {
-            revl.push_str(country);
+            revl.push_str(&format!("{}, ", country));
         }
 
         GEOCODING_CACHE
@@ -531,7 +531,7 @@ pub fn handle(
         }
     };
     let format_alerts = |out: &mut String, alerts: &Option<Vec<Alert>>| -> Result<()> {
-        if let &Some(ref alerts) = alerts {
+        if let Some(ref alerts) = *alerts {
             let utc_now = Utc::now();
             let timezone: Tz = res.timezone.parse().unwrap();
             let range_adjustment = if days {
