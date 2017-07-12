@@ -22,9 +22,12 @@ use html5ever::rcdom::{NodeData, RcDom, Handle};
 use html5ever::tendril::TendrilSink;
 use humansize::{FileSize, file_size_opts as Options};
 use percent_encoding::percent_decode;
+use reqwest;
 use reqwest::header::{ContentLength, ContentType, Headers};
 use reqwest::mime::{Attr, Value};
 use reqwest::Response;
+use serde_json;
+use serde_json::Value as JValue;
 use wolfram_alpha::query;
 
 use std::borrow::Borrow;
@@ -33,11 +36,93 @@ use std::io::{Cursor, Read};
 use config::ServerCfg;
 use errors::*;
 
-pub fn handle(cfg: &ServerCfg, mut response: Response) -> Result<String> {
+pub fn handle(cfg: &ServerCfg, mut response: Response, regex_match: bool) -> Result<String> {
     let domain = response.url().domain().unwrap().to_owned();
 
     // Invoke either site specific or generic handler
-    if domain.ends_with("wolframalpha.com") {
+    if domain.ends_with("youtube.com") || domain.ends_with("youtu.be") {
+        let path = response.url().path_segments().unwrap().last().unwrap();
+        let mut query = response.url().query_pairs();
+        if path == "watch" || domain.ends_with("youtu.be") {
+            let mut body = String::new();
+            let v = query
+                .find(|&(ref k, _)| if k == "v" { true } else { false })
+                .unwrap()
+                .1;
+            let mut resp = reqwest::get(&format!(
+                "https://www.googleapis.com/youtube/v3/videos?part=status,snippet,contentDetails,\
+                 statistics&key={}&id={}",
+                cfg.youtube_key.as_ref().unwrap(),
+                if domain.ends_with("youtube.com") {
+                    v.as_ref()
+                } else {
+                    path
+                }
+            ))?;
+            resp.read_to_string(&mut body)?;
+            let resp: JValue = serde_json::from_str(&body)?;
+            let channel = resp.pointer("/items/0/snippet/channelTitle")
+                .unwrap()
+                .as_str()
+                .unwrap();
+            let title = resp.pointer("/items/0/snippet/title")
+                .unwrap()
+                .as_str()
+                .unwrap();
+            let duration = resp.pointer("/items/0/contentDetails/duration")
+                .unwrap()
+                .as_str()
+                .unwrap();
+            let definition = resp.pointer("/items/0/contentDetails/definition")
+                .unwrap()
+                .as_str()
+                .unwrap();
+            let dimension = resp.pointer("/items/0/contentDetails/dimension")
+                .unwrap()
+                .as_str()
+                .unwrap();
+            let restricted = resp.pointer("/items/0/contentDetails/regionRestriction/blocked")
+                .is_some();
+            let ratings_disabled = !resp.pointer("/items/0/status/publicStatsViewable")
+                .unwrap()
+                .as_bool()
+                .unwrap();
+            let views = resp.pointer("/items/0/statistics/viewCount")
+                .unwrap()
+                .as_str()
+                .unwrap();
+            Ok(format!(
+                "^ {} [{}] ({}) {} views {}{}{}",
+                title,
+                duration.replace('P', "").replace('T', "").to_lowercase(),
+                channel,
+                pretty_number(views),
+                definition.to_uppercase(),
+                {
+                    if dimension == "3d" {
+                        " (3D)"
+                    } else {
+                        ""
+                    }
+                },
+                {
+                    if restricted && ratings_disabled {
+                        " [Region restricted|Ratings disabled]"
+                    } else if restricted {
+                        " [Region restricted]"
+                    } else if ratings_disabled  {
+                        " [Ratings disabled]"
+                    } else {
+                        ""
+                    }
+                }
+            ))
+        } else if path == "results" {
+            unimplemented!()
+        } else {
+            unimplemented!("{}, {:?}", path, query)
+        }
+    } else if domain.ends_with("wolframalpha.com") {
         let query = percent_decode(response.url().query().unwrap().as_bytes())
             .decode_utf8()?;
         let query: &str = query.borrow();
@@ -53,8 +138,14 @@ pub fn handle(cfg: &ServerCfg, mut response: Response) -> Result<String> {
             }),
         )?;
         if let Some(pods) = resp.pods {
-            println!("{:?}", &pods[0].subpods[0].plaintext);
-            Ok(pods[0].subpods[0].plaintext.clone().unwrap())
+            if regex_match {
+                Ok(format!(
+                    "^ {}",
+                    pods[0].subpods[0].plaintext.as_ref().unwrap()
+                ))
+            } else {
+                Ok(pods[0].subpods[0].plaintext.clone().unwrap())
+            }
         } else {
             Err(ErrorKind::NoExtractableData.into())
         }
@@ -70,6 +161,7 @@ pub fn handle(cfg: &ServerCfg, mut response: Response) -> Result<String> {
                     .as_bytes(),
             ).decode_utf8()?
                 .borrow(),
+            regex_match,
         )
     } else {
         let mut bytes = Vec::new();
@@ -94,21 +186,55 @@ pub fn handle(cfg: &ServerCfg, mut response: Response) -> Result<String> {
             (Ok(dom), _, _) => {
                 let mut title = String::new();
                 walk_for_title(dom.document, &mut title);
-                Ok(format!("[{}]", title))
+                if title.trim().is_empty() {
+                    Err(ErrorKind::NoExtractableData.into())
+                } else {
+                    Ok(format!("^ {}", title))
+                }
             }
             (Err(_), Some(l), Some((top, sub))) => {
                 Ok(format!(
-                    "[{}: {}; {}]",
+                    "^ {}: {}; {}",
                     top,
                     sub,
-                    l.file_size(Options::CONVENTIONAL).unwrap()
+                    l.file_size(Options::BINARY).unwrap()
                 ))
             }
-            (_, None, Some((top, sub))) => Ok(format!("[{}: {}]", top, sub)),
+            (_, None, Some((top, sub))) => Ok(format!("^ {}: {}", top, sub)),
             (Err(_), None, None) |
             (Err(_), Some(_), None) => Err(ErrorKind::NoExtractableData.into()),
         }
     }
+}
+
+fn pretty_number(num: &str) -> String {
+    let mut ret = String::with_capacity(num.len() + num.len() / 3);
+    let mut iter = num.chars().rev().peekable();
+    while {
+        let x = iter.peek();
+        x.is_some()
+    } {
+        let x = iter.next();
+        let y = iter.next();
+        let z = iter.next();
+        let a = iter.peek();
+        if x.is_some() && y.is_some() && z.is_some() && a.is_some() {
+            ret.push(x.unwrap());
+            ret.push(y.unwrap());
+            ret.push(z.unwrap());
+            ret.push('.');
+        } else if x.is_some() && y.is_some() && z.is_some() {
+            ret.push(x.unwrap());
+            ret.push(y.unwrap());
+            ret.push(z.unwrap());
+        } else if x.is_some() && y.is_some() {
+            ret.push(x.unwrap());
+            ret.push(y.unwrap());
+        } else {
+            ret.push(x.unwrap());
+        }
+    }
+    ret.chars().rev().collect()
 }
 
 fn body_from_charsets(bytes: Vec<u8>, headers: &Headers) -> Result<String> {
@@ -197,7 +323,7 @@ mod jisho {
         pub parts_of_speech: Vec<String>,
     }
 
-    pub fn handle(input: &str) -> Result<String> {
+    pub fn handle(input: &str, regex_match: bool) -> Result<String> {
         let mut resp = reqwest::get(&(API_BASE.to_owned() + input))?;
         let resp = if resp.status().is_success() {
             let mut body = String::new();
@@ -212,7 +338,12 @@ mod jisho {
             return Err(ErrorKind::NoExtractableData.into());
         };
 
-        let mut ret = String::new();
+        let mut ret = if regex_match {
+            String::from("^ ")
+        } else {
+            String::new()
+        };
+
         for (n, dp) in resp.iter().take(3).enumerate() {
             if n == 0 {
                 ret.push_str("\x021\x02: ");

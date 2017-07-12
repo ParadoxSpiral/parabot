@@ -22,7 +22,12 @@ use reqwest;
 use config::ServerCfg;
 use errors::*;
 
-pub fn handle(cfg: &ServerCfg, msg: &str, show_redirect: bool) -> Result<String> {
+pub fn handle(
+    cfg: &ServerCfg,
+    msg: &str,
+    show_redirect: bool,
+    regex_match: bool,
+) -> Result<String> {
     let resp = Query::new(msg, "parabot").execute()?;
 
     match resp.response_type {
@@ -62,10 +67,11 @@ pub fn handle(cfg: &ServerCfg, msg: &str, show_redirect: bool) -> Result<String>
                 if res.status().is_success() {
                     if show_redirect {
                         return Ok(
-                            format!("{}: ", resp.redirect) + &super::url::handle(cfg, res)?,
+                            format!("{}: ", resp.redirect) +
+                                &super::url::handle(cfg, res, regex_match)?,
                         );
                     } else {
-                        return Ok(super::url::handle(cfg, res)?);
+                        return Ok(super::url::handle(cfg, res, regex_match)?);
                     }
                 }
             }
