@@ -25,7 +25,7 @@ use slog::Logger;
 use unicode_segmentation::UnicodeSegmentation;
 
 use std::collections::HashMap;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use config::{Config, ServerCfg};
 use errors::*;
@@ -40,6 +40,7 @@ const COMMAND_MODIFIER: char = '.';
 // The spec does not define a limit, but it's 500b in most cases. However, the server may
 // add crap to your message, you cannot know. Hopefully 30b is enough..
 const MESSAGE_BYTES_LIMIT: usize = 470;
+static LAST_MESSAGE: AtomicBool = AtomicBool::new(false);
 
 lazy_static!{
     static ref HOSTNAMES: RwLock<HashMap<String, String>> = {
@@ -123,7 +124,23 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
             tell::handle_names_reply(cfg, srv, log, msg)?;
         }
         Command::PRIVMSG(ref target, ref content) => {
-            debug!(log, "PRIVMSG to {}: {}", target, content);
+            debug!(
+                log,
+                "PRIVMSG from {} to {}: {}",
+                msg.source_nickname().unwrap(),
+                target,
+                content
+            );
+
+            // Ignore msgs by other bots with the same nick
+            // (e.g. when working under the hivemind wormy)
+            if module_enabled_channel(cfg, &*target, "wormy") &&
+                msg.source_nickname().unwrap() == cfg.wormy_nick.as_ref().unwrap()
+            {
+                LAST_MESSAGE.store(false, Ordering::Release);
+                return Ok(());
+            }
+
             let reply_target = msg.response_target().unwrap();
             let private = !(target == reply_target);
 
@@ -132,22 +149,23 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                 if &content[1..] == "bots" || &content[1..] == "bot" {
                     trace!(log, "Replying to .bots");
                     let reply = format!(
-                        "I am the slave of {:?}… at least 123% safer & faster \
-                         than m's & l's shit. For a list of commands, try `.help`",
+                        "Serving text/html since 2017, yours truly {:?} \
+                         For a list of commands, try `.help`",
                         &cfg.owners
                     );
                     send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
                 } else if content[1..].starts_with("help") {
                     trace!(log, "Replying to .help");
-                    let reply = help::handle(cfg, &*target, content, private);
-                    send_segmented_message(
-                        cfg,
-                        srv,
-                        log,
-                        msg.source_nickname().unwrap(),
-                        &reply,
-                        true,
-                    )?;
+                    if let Some(reply) = help::handle(cfg, &*target, content, private) {
+                        send_segmented_message(
+                            cfg,
+                            srv,
+                            log,
+                            msg.source_nickname().unwrap(),
+                            &reply,
+                            true,
+                        )?
+                    }
                 } else if &content[1..] == "exit" || &content[1..] == "quit" ||
                            &content[1..] == "part"
                 {
@@ -158,17 +176,36 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                         let _ = send_segmented_message(cfg, srv, log, &cfg.nickname, "", false);
                     }
                     return Err(ErrorKind::ExitRequested.into());
+                } else if &content[1..] == "who" && module_enabled_channel(cfg, &*target, "wormy") {
+                    if module_enabled_channel(cfg, &*target, "wormy") &&
+                        LAST_MESSAGE.load(Ordering::Acquire)
+                    {
+                        send_segmented_message(
+                            cfg,
+                            srv,
+                            log,
+                            reply_target,
+                            "parabot of the hive replied to the last command/url",
+                            false,
+                        )?;
+                    }
                 } else if (private || module_enabled_channel(cfg, &*target, "tell")) &&
                            content[1..].starts_with("tell")
                 {
                     trace!(log, "Starting .tell");
                     let reply = tell::add(cfg, log, msg, private)?;
+                    if module_enabled_channel(cfg, &*target, "wormy") {
+                        LAST_MESSAGE.store(true, Ordering::Release);
+                    }
                     send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
                 } else if (private || module_enabled_channel(cfg, &*target, "duckduckgo")) &&
                            content[1..].starts_with("ddg")
                 {
                     trace!(log, "Starting .ddg");
                     let reply = ddg::handle(cfg, content[4..].trim(), true, false)?;
+                    if module_enabled_channel(cfg, &*target, "wormy") {
+                        LAST_MESSAGE.store(true, Ordering::Release);
+                    }
                     send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
                 } else if (private || module_enabled_channel(cfg, &*target, "wolframalpha")) &&
                            content[1..].starts_with("wa")
@@ -180,6 +217,9 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                         false,
                         false,
                     )?;
+                    if module_enabled_channel(cfg, &*target, "wormy") {
+                        LAST_MESSAGE.store(true, Ordering::Release);
+                    }
                     send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
                 } else if (private || module_enabled_channel(cfg, &*target, "jisho")) &&
                            content[1..].starts_with("jisho")
@@ -191,6 +231,9 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                         false,
                         false,
                     )?;
+                    if module_enabled_channel(cfg, &*target, "wormy") {
+                        LAST_MESSAGE.store(true, Ordering::Release);
+                    }
                     send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
                 } else if (private || module_enabled_channel(cfg, &*target, "weather")) &&
                            content[1..].starts_with("weather")
@@ -198,6 +241,9 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                     trace!(log, "Starting .weather");
                     let nick = msg.source_nickname().unwrap();
                     let reply = weather::handle(cfg, srv, log, &content[8..], nick)?;
+                    if module_enabled_channel(cfg, &*target, "wormy") {
+                        LAST_MESSAGE.store(true, Ordering::Release);
+                    }
                     send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
                 } else {
                     warn!(log, "Unknown command {}", &content[1..]);
@@ -263,6 +309,9 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                                     }) {
                                     let reply_target = msg.response_target().unwrap();
                                     let reply = url::handle(cfg, res, true)?;
+                                    if module_enabled_channel(cfg, &*target, "wormy") {
+                                        LAST_MESSAGE.store(true, Ordering::Release);
+                                    }
                                     send_segmented_message(
                                         cfg,
                                         srv,

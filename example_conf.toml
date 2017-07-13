@@ -12,12 +12,13 @@ owners = ["nick1", "nick2"] # a list of nicks that may exec priviledged cmds
 # pütional: youtube_api_key = "key" a https://console.developers.google.com api key
 # optional: max_burst_messages = 4
 # optional: burst_window_length = 8 # Time between bursts in seconds
+# optional: wormy_nick = "nick" # nick of a wormy hivemind bot
 port = 6697
 	[[server.channel]]
 	name = "#c"
 	# optional: password = "channel_key"
 	# optional: url_blacklisted_domains = ["google.com"]
-	modules = ["duckduckgo", "jisho", "url-info", "tell", "wolframalpha", "weather", "youtube"]
+	modules = ["duckduckgo", "jisho", "url-info", "tell", "wolframalpha", "weather", "wormy", "youtube"]
 	[[server.channel]]
 	name = "#news"
 	modules = ["url-info", "weather"]

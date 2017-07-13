@@ -175,10 +175,9 @@ pub fn handle(cfg: &ServerCfg, mut response: Response, regex_match: bool) -> Res
                     .read_from(&mut body)?)
             }),
             headers.get::<ContentLength>(),
-            headers.get::<ContentType>().and_then(|ct| {
-                let ct = &ct.0;
-                Some((&ct.0, &ct.1))
-            }),
+            headers
+                .get::<ContentType>()
+                .and_then(|ct| Some((&(&ct.0).0, &(&ct.0).1))),
         ) {
             (Ok(dom), _, _) => {
                 let mut title = String::new();
@@ -223,10 +222,10 @@ fn pretty_number(num: &str) -> String {
 
 fn body_from_charsets(bytes: Vec<u8>, headers: &Headers) -> Result<String> {
     Ok(if let Some(&(_, ref charset)) =
-        headers.get::<ContentType>().and_then(|ct| {
-            let ct = &ct.0;
-            ct.2.iter().find(|e| e.0 == Attr::Charset)
-        }) {
+        headers
+            .get::<ContentType>()
+            .and_then(|ct| (&ct.0).2.iter().find(|e| e.0 == Attr::Charset))
+    {
         if *charset == Value::Utf8 {
             String::from_utf8(bytes)?
         } else {
