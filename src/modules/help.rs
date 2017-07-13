@@ -65,6 +65,11 @@ pub fn handle(cfg: &ServerCfg, target: &str, msg: &str, private: bool) -> String
                  youtube."
                     .to_owned()
             }
+            "who" | ".who" => {
+                "If parabot runs as part of a wormy hivemind(e.g. sees messages from other bots as \
+                his own nick), this will inform the user whether parabot answered the last command."
+                .to_owned()
+            }
             _ => "Unknown or undocumented module, sorry.".to_owned(),
         }
     }

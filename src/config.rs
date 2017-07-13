@@ -52,6 +52,7 @@ pub struct ServerCfg {
     pub max_burst_messages: Option<u32>,
     pub burst_window_length: Option<u32>,
     pub owners: Vec<String>,
+    pub wormy_nick: Option<String>,
     #[serde(rename = "channel")]
     pub channels: Vec<ChannelCfg>,
 }
@@ -138,6 +139,14 @@ pub fn parse_config(input: &str) -> Result<Config> {
                     "Youtube module enabled on {:?}, but no key given",
                     &srv.address
                 ).into(),
+            );
+        } else if srv.wormy_nick.is_none() &&
+                   srv.channels
+                       .iter()
+                       .any(|c| c.modules.iter().any(|m| m == "wormy"))
+        {
+            return Err(
+                format!("Wormy module enabled on {:?}, but no nick", &srv.address).into(),
             );
         }
     }
