@@ -17,12 +17,14 @@
 
 use config::ServerCfg;
 
-pub fn handle(cfg: &ServerCfg, target: &str, msg: &str, private: bool) -> String {
+pub fn handle(cfg: &ServerCfg, target: &str, msg: &str, private: bool) -> Option<String> {
     if &msg[1..] == "help" {
         if private {
-            "Hi! For more information, use .help <module>. You can use these modules: \
-             `duckduckgo`, `url-info`, `weather`, `tell`."
-                .to_owned()
+            Some(
+                "Hi! For more information, use .help <module>. You can use these modules: \
+                 `duckduckgo`, `url-info`, `weather`, `tell`."
+                    .to_owned(),
+            )
         } else {
             let mut modules = cfg.channels
                 .iter()
@@ -31,46 +33,58 @@ pub fn handle(cfg: &ServerCfg, target: &str, msg: &str, private: bool) -> String
                 .modules
                 .clone();
             modules.sort();
-            format!(
+            Some(format!(
                 "For more information, use .help <module>. \
                  Enabled modules: {:?}",
                 &modules
-            )
+            ))
         }
     } else {
         // Starts with help, e.g. more args
         match msg[6..].trim() {
             "bots" | ".bots" => {
-                ".bots will (hopefully) cause all bots in the channel to reply.".to_owned()
+                Some(
+                    ".bots will (hopefully) cause all bots in the channel to reply.".to_owned(),
+                )
             }
             "ddg" | ".ddg" => {
-                ".ddg <search> uses ddg's instant answer API to perform a search.".to_owned()
+                Some(
+                    ".ddg <search> uses ddg's instant answer API to perform a search.".to_owned(),
+                )
             }
             "tell" | ".tell" => {
-                ".tell <nick> <message> will tell the user with <nick> <message>, \
-                 when they join a channel shared with me."
-                    .to_owned()
+                Some(
+                    ".tell <nick> <message> will tell the user with <nick> <message>, \
+                     when they join a channel shared with me."
+                        .to_owned(),
+                )
             }
             "weather" | ".weather" => {
-                "`.weather [<n|x-y><d|h>] [location]` will show weather information \
+                Some("`.weather [<n|x-y><d|h>] [location]` will show weather information \
                  powered by Dark Sky. If you specify `n` and `d` xor `h`, data of the next \
                  `n`th`d|h` will be replied with. Specifying a range of `x-y` will use data of \
                  that range. Data is available for the next 168h, or 7d. If you omit `location`, \
                  the location you last used will be used."
-                    .to_owned()
+                    .to_owned())
             }
             "url-info" | "url" => {
-                "url-info fetches urls posted in the channel and displays their metadata, and, \
+                Some("url-info fetches urls posted in the channel and displays their metadata, and, \
                  depending on the website, more. Current additional metadata: wolframalpha, jisho, \
                  youtube."
-                    .to_owned()
+                    .to_owned())
             }
             "who" | ".who" => {
-                "If parabot runs as part of a wormy hivemind(e.g. sees messages from other bots as \
+                Some("If parabot runs as part of a wormy hivemind(e.g. sees messages from other bots as \
                 his own nick), this will inform the user whether parabot answered the last command."
-                .to_owned()
+                .to_owned())
             }
-            _ => "Unknown or undocumented module, sorry.".to_owned(),
+            _ => {
+                if super::module_enabled_channel(cfg, &*target, "wormy") {
+                    None
+                } else {
+                    Some("Unknown or undocumented module, sorry.".into())
+                }
+            }
         }
     }
 }

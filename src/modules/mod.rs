@@ -156,15 +156,16 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                     send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
                 } else if content[1..].starts_with("help") {
                     trace!(log, "Replying to .help");
-                    let reply = help::handle(cfg, &*target, content, private);
-                    send_segmented_message(
-                        cfg,
-                        srv,
-                        log,
-                        msg.source_nickname().unwrap(),
-                        &reply,
-                        true,
-                    )?;
+                    if let Some(reply) = help::handle(cfg, &*target, content, private) {
+                        send_segmented_message(
+                            cfg,
+                            srv,
+                            log,
+                            msg.source_nickname().unwrap(),
+                            &reply,
+                            true,
+                        )?
+                    }
                 } else if &content[1..] == "exit" || &content[1..] == "quit" ||
                            &content[1..] == "part"
                 {
@@ -175,8 +176,10 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                         let _ = send_segmented_message(cfg, srv, log, &cfg.nickname, "", false);
                     }
                     return Err(ErrorKind::ExitRequested.into());
-                } else if &content[1..] == "who" && module_enabled_channel(cfg, &*target, "who") {
-                    if module_enabled_channel(cfg, &*target, "wormy")&& LAST_MESSAGE.load(Ordering::Acquire) {
+                } else if &content[1..] == "who" && module_enabled_channel(cfg, &*target, "wormy") {
+                    if module_enabled_channel(cfg, &*target, "wormy") &&
+                        LAST_MESSAGE.load(Ordering::Acquire)
+                    {
                         send_segmented_message(
                             cfg,
                             srv,
@@ -197,7 +200,9 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                 {
                     trace!(log, "Starting .ddg");
                     let reply = ddg::handle(cfg, content[4..].trim(), true, false)?;
-                    if module_enabled_channel(cfg, &*target, "wormy")&& LAST_MESSAGE.load(Ordering::Acquire) {
+                    if module_enabled_channel(cfg, &*target, "wormy") &&
+                        LAST_MESSAGE.load(Ordering::Acquire)
+                    {
                         LAST_MESSAGE.store(true, Ordering::Release);
                     }
                     send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
@@ -211,7 +216,9 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                         false,
                         false,
                     )?;
-                    if module_enabled_channel(cfg, &*target, "wormy")&& LAST_MESSAGE.load(Ordering::Acquire) {
+                    if module_enabled_channel(cfg, &*target, "wormy") &&
+                        LAST_MESSAGE.load(Ordering::Acquire)
+                    {
                         LAST_MESSAGE.store(true, Ordering::Release);
                     }
                     send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
@@ -225,7 +232,9 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                         false,
                         false,
                     )?;
-                    if module_enabled_channel(cfg, &*target, "wormy")&& LAST_MESSAGE.load(Ordering::Acquire) {
+                    if module_enabled_channel(cfg, &*target, "wormy") &&
+                        LAST_MESSAGE.load(Ordering::Acquire)
+                    {
                         LAST_MESSAGE.store(true, Ordering::Release);
                     }
                     send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
@@ -235,7 +244,9 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                     trace!(log, "Starting .weather");
                     let nick = msg.source_nickname().unwrap();
                     let reply = weather::handle(cfg, srv, log, &content[8..], nick)?;
-                    if module_enabled_channel(cfg, &*target, "wormy")&& LAST_MESSAGE.load(Ordering::Acquire) {
+                    if module_enabled_channel(cfg, &*target, "wormy") &&
+                        LAST_MESSAGE.load(Ordering::Acquire)
+                    {
                         LAST_MESSAGE.store(true, Ordering::Release);
                     }
                     send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
