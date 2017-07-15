@@ -258,7 +258,7 @@ pub fn handle(
                 GEOCODING_API_BASE,
                 cfg.geocoding_key.as_ref().unwrap(),
                 location
-            ))
+            ))?
             .header(AcceptEncoding(vec![qitem(Encoding::Gzip)]))
             .send()
             .or_else(|err| {
@@ -328,7 +328,7 @@ pub fn handle(
                 cfg.geocoding_key.as_ref().unwrap(),
                 lat,
                 lng
-            ))
+            ))?
             .header(AcceptEncoding(vec![qitem(Encoding::Gzip)]))
             .send()
             .or_else(|err| {
@@ -394,7 +394,7 @@ pub fn handle(
             revl.push_str(&format!("{}, ", county));
         }
         if country != "" {
-            revl.push_str(&format!("{}, ", country));
+            revl.push_str(country);
         }
 
         GEOCODING_CACHE

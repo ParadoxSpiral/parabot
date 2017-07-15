@@ -26,8 +26,8 @@ chrono = "0.4"
 chrono-tz = "0.4"
 crossbeam = "0.2"
 ddg = "0.4"
-diesel = { version = "0.13.0", features = ["sqlite"] }
-diesel_codegen = { version = "0.13.0", features = ["sqlite"] }
+diesel = { version = "0.14", features = ["sqlite"] }
+diesel_codegen = { version = "0.14", features = ["sqlite"] }
 encoding = "0.2"
 error-chain = "0.10"
 html5ever = "0.18"
@@ -37,7 +37,7 @@ lazy_static = "0.2"
 parking_lot = {version = "0.4", features = ["nightly"]}
 percent-encoding = "1.0"
 regex = "0.2"
-reqwest = "0.6"
+reqwest = "0.7"
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"

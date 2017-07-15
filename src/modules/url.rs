@@ -24,7 +24,7 @@ use humansize::{FileSize, file_size_opts as Options};
 use percent_encoding::percent_decode;
 use reqwest;
 use reqwest::header::{ContentLength, ContentType, Headers};
-use reqwest::mime::{Attr, Value};
+use reqwest::mime;
 use reqwest::Response;
 use serde_json;
 use serde_json::Value as JValue;
@@ -164,26 +164,33 @@ pub fn handle(cfg: &ServerCfg, mut response: Response, regex_match: bool) -> Res
         let mut bytes = Vec::new();
         response.read_to_end(&mut bytes)?;
         let headers = response.headers();
-        let body = body_from_charsets(bytes, headers).and_then(|body| Ok(Cursor::new(body)));
+        let content_length = headers.get::<ContentLength>();
+        let content_type = headers.get::<ContentType>();
 
-        match (
-            body.and_then(|mut body| {
-                Ok(html5ever::parse_document(
-                    RcDom::default(),
-                    Default::default(),
-                ).from_utf8()
-                    .read_from(&mut body)?)
-            }),
-            headers.get::<ContentLength>(),
-            headers
-                .get::<ContentType>()
-                .and_then(|ct| Some((&(&ct.0).0, &(&ct.0).1))),
-        ) {
-            (Ok(dom), _, _) => {
+        match (content_length, content_type) {
+            (Some(l), Some(mime)) if mime.0.subtype() != mime::HTML => {
+                Ok(format!(
+                    "┗━ {}; {}",
+                    mime,
+                    l.file_size(Options::BINARY).unwrap()
+                ))
+            }
+            (None, Some(mime)) if mime.0.subtype() != mime::HTML => Ok(format!("┗━ {}", mime)),
+            (_, Some(mime)) if mime.0.subtype() == mime::HTML => {
+                let dom = body_from_charsets(bytes, headers).and_then(|body| {
+                    Ok(html5ever::parse_document(
+                        RcDom::default(),
+                        Default::default(),
+                    ).from_utf8()
+                        .read_from(&mut Cursor::new(body))?)
+                })?;
+
                 let mut title = String::new();
                 let mut description = String::new();
                 walk_for_metadata(dom.document, &mut title, &mut description);
-                if title.trim().is_empty() {
+                let title = title.trim();
+                let description = description.trim();
+                if title.is_empty() {
                     Err(ErrorKind::NoExtractableData.into())
                 } else if description.is_empty() || domain.ends_with("imgur.com") {
                     Ok(format!("┗━ {}", title))
@@ -193,17 +200,7 @@ pub fn handle(cfg: &ServerCfg, mut response: Response, regex_match: bool) -> Res
                     Ok(format!("┗━ {} - {}", title, description))
                 }
             }
-            (Err(_), Some(l), Some((top, sub))) => {
-                Ok(format!(
-                    "┗━ {}: {}; {}",
-                    top,
-                    sub,
-                    l.file_size(Options::BINARY).unwrap()
-                ))
-            }
-            (_, None, Some((top, sub))) => Ok(format!("┗━ {}: {}", top, sub)),
-            (Err(_), None, None) |
-            (Err(_), Some(_), None) => Err(ErrorKind::NoExtractableData.into()),
+            _ => Err(ErrorKind::NoExtractableData.into()),
         }
     }
 }
@@ -221,15 +218,14 @@ fn pretty_number(num: &str) -> String {
 }
 
 fn body_from_charsets(bytes: Vec<u8>, headers: &Headers) -> Result<String> {
-    Ok(if let Some(&(_, ref charset)) =
-        headers
-            .get::<ContentType>()
-            .and_then(|ct| (&ct.0).2.iter().find(|e| e.0 == Attr::Charset))
+    Ok(if let Some(charset) = headers
+        .get::<ContentType>()
+        .and_then(|ct| ct.get_param(mime::CHARSET))
     {
-        if *charset == Value::Utf8 {
+        if charset == mime::UTF_8 {
             String::from_utf8(bytes)?
         } else {
-            encoding_from_whatwg_label(charset.as_str())
+            encoding_from_whatwg_label(charset.as_ref())
                 .unwrap()
                 .decode(&bytes, DecoderTrap::Replace)
                 .unwrap()
