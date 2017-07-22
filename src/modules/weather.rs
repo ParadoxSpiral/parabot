@@ -165,14 +165,12 @@ pub fn handle(
                     captures.name("inner_location"),
                     captures.name("outer_location"),
                 ) {
-                    (Some(loc), None) |
-                    (None, Some(loc)) => {
+                    (Some(loc), None) | (None, Some(loc)) => {
                         let new_loc = loc.as_str().trim().to_owned();
                         // Potentially update the cache and DB
                         let mut cache = LOCATION_CACHE.write();
-                        if let Some(cached_loc) = cache
-                            .get(&(cfg.address.clone(), nick.to_owned()))
-                            .cloned()
+                        if let Some(cached_loc) =
+                            cache.get(&(cfg.address.clone(), nick.to_owned())).cloned()
                         {
                             // Only update if the location actually changed
                             if cached_loc.to_lowercase() != new_loc.to_lowercase() {
@@ -220,9 +218,8 @@ pub fn handle(
                     (Some(_), Some(_)) => unreachable!(),
                     (None, None) => {
                         let cache = LOCATION_CACHE.read();
-                        if let Some(cached_loc) = cache
-                            .get(&(cfg.address.clone(), nick.to_owned()))
-                            .cloned()
+                        if let Some(cached_loc) =
+                            cache.get(&(cfg.address.clone(), nick.to_owned())).cloned()
                         {
                             cached_loc
                         } else {
@@ -499,35 +496,25 @@ pub fn handle(
                 out.push_str(&format!("{}% cloud cover; ", (cc * 100f64).round()));
             }
         }
-        if let Some(v) = dp.visibility {
-            out.push_str(&format!("{}km visibility; ", v));
-        }
         if let Some(pp) = dp.precip_probability {
             if pp > 0.049f64 {
-                if dp.wind_gust.is_some() || dp.wind_speed.is_some() {
+                if dp.wind_speed.is_some() {
                     out.push_str(&format!(
-                        "{}% chance of {:?}; ",
+                        "{}% chance of {}; ",
                         (pp * 100f64).round(),
-                        dp.precip_type.as_ref().unwrap()
+                        format!("{:?}", dp.precip_type.as_ref().unwrap()).to_lowercase()
                     ));
                 } else {
                     out.push_str(&format!(
-                        "{}% chance of {:?}",
+                        "{}% chance of {}",
                         (pp * 100f64).round(),
-                        dp.precip_type.as_ref().unwrap()
+                        format!("{:?}", dp.precip_type.as_ref().unwrap()).to_lowercase()
                     ));
                 }
             }
         }
-        if let Some(wg) = dp.wind_gust {
-            out.push_str(&format!("{}km/h wind gusts", wg));
-        }
         if let Some(ws) = dp.wind_speed {
-            if dp.wind_gust.is_none() {
-                out.push_str(&format!("{}km/h wind speed", ws));
-            } else {
-                out.push_str(&format!(", {}km/h wind speed", ws));
-            }
+            out.push_str(&format!("{}km/h wind speed", ws));
         }
     };
     let format_alerts = |out: &mut String, alerts: &Option<Vec<Alert>>| -> Result<()> {
@@ -540,55 +527,35 @@ pub fn handle(
                 Duration::hours(range.start as _)
             };
             let adjusted_request_time = utc_now.with_timezone(&timezone) + range_adjustment;
-            if alerts.len() > 1 {
-                let mut num = 0;
-                for (n, a) in alerts.iter().enumerate() {
-                    let mut expired = false;
-                    if let Some(expires) = a.expires {
-                        if adjusted_request_time > timezone.timestamp(expires as _, 0) {
-                            expired = true;
-                            trace!(log, "Expired alert");
-                        }
-                    }
-                    if !expired {
-                        num += 1;
-                        super::send_segmented_message(
-                            cfg,
-                            srv,
-                            log,
-                            nick,
-                            format!(
-                                "{}, severity: {:?} in {:?}; See <{}>; ",
-                                n,
-                                a.severity,
-                                &a.regions,
-                                a.uri
-                            ).trim_right(),
-                            false,
-                        )?;
+            let mut num = 0;
+            for (n, a) in alerts.iter().enumerate() {
+                let mut expired = false;
+                if let Some(expires) = a.expires {
+                    if adjusted_request_time > timezone.timestamp(expires as _, 0) {
+                        expired = true;
+                        trace!(log, "Expired alert");
                     }
                 }
-                if num != 0 {
-                    out.push_str(&format!("; PMed {} alerts", num));
+                if !expired {
+                    num += 1;
+                    super::send_segmented_message(
+                        cfg,
+                        srv,
+                        log,
+                        nick,
+                        &format!(
+                            "\x02{}: {}\x02 in {:?}; <{}>",
+                            n + 1,
+                            a.title,
+                            &a.regions,
+                            a.description
+                        ),
+                        false,
+                    )?;
                 }
-            } else if let Some(expires) = alerts[0].expires {
-                if adjusted_request_time < timezone.timestamp(expires as _, 0) {
-                    out.push_str(&format!(
-                        "; Alert, severity: {:?} in {:?}; See <{}>",
-                        alerts[0].severity,
-                        &alerts[0].regions,
-                        alerts[0].uri
-                    ));
-                } else {
-                    trace!(log, "Expired alert");
-                }
-            } else {
-                out.push_str(&format!(
-                    "; Alert, severity: {:?} in {:?}; See <{}>",
-                    alerts[0].severity,
-                    &alerts[0].regions,
-                    alerts[0].uri
-                ));
+            }
+            if num != 0 {
+                out.push_str(&format!("; PMed {} alert(s)", num));
             }
         }
         Ok(())
