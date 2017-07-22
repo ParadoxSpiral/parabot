@@ -49,6 +49,8 @@ pub struct ServerCfg {
     pub wolframalpha_appid: Option<String>,
     #[serde(rename = "youtube_api_key")]
     pub youtube_key: Option<String>,
+    pub google_search_id: Option<String>,
+    pub google_search_key: Option<String>,
     pub max_burst_messages: Option<u32>,
     pub burst_window_length: Option<u32>,
     pub owners: Vec<String>,
@@ -146,7 +148,21 @@ pub fn parse_config(input: &str) -> Result<Config> {
                        .any(|c| c.modules.iter().any(|m| m == "wormy"))
         {
             return Err(
-                format!("Wormy module enabled on {:?}, but no nick", &srv.address).into(),
+                format!(
+                    "Wormy module enabled on {:?}, but no nick given",
+                    &srv.address
+                ).into(),
+            );
+        } else if (srv.google_search_id.is_none() || srv.google_search_key.is_none()) &&
+                   srv.channels
+                       .iter()
+                       .any(|c| c.modules.iter().any(|m| m == "google"))
+        {
+            return Err(
+                format!(
+                    "Google module enabled on {:?}, but no search id given",
+                    &srv.address
+                ).into(),
             );
         }
     }

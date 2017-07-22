@@ -31,6 +31,7 @@ use config::{Config, ServerCfg};
 use errors::*;
 
 mod ddg;
+mod google;
 mod help;
 mod tell;
 pub mod url;
@@ -203,6 +204,15 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                 {
                     trace!(log, "Starting .ddg");
                     let reply = ddg::handle(cfg, content[4..].trim(), true, false)?;
+                    if module_enabled_channel(cfg, &*target, "wormy") {
+                        LAST_MESSAGE.store(true, Ordering::Release);
+                    }
+                    send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
+                } else if (private || module_enabled_channel(cfg, &*target, "google")) &&
+                           content[1..].starts_with("g")
+                {
+                    trace!(log, "Starting .g");
+                    let reply = google::handle(cfg, content[2..].trim())?;
                     if module_enabled_channel(cfg, &*target, "wormy") {
                         LAST_MESSAGE.store(true, Ordering::Release);
                     }

@@ -26,7 +26,6 @@ use reqwest;
 use reqwest::header::{ContentLength, ContentType, Headers};
 use reqwest::mime;
 use reqwest::Response;
-use serde_json;
 use serde_json::Value as JValue;
 use wolfram_alpha::query;
 
@@ -44,9 +43,8 @@ pub fn handle(cfg: &ServerCfg, mut response: Response, regex_match: bool) -> Res
         let path = response.url().path_segments().unwrap().last().unwrap();
         let mut query = response.url().query_pairs();
         if path == "watch" || domain.ends_with("youtu.be") {
-            let mut body = String::new();
             let v = query.find(|&(ref k, _)| k == "v").unwrap().1;
-            let mut resp = reqwest::get(&format!(
+            let resp: JValue = reqwest::get(&format!(
                 "https://www.googleapis.com/youtube/v3/videos?part=status,snippet,contentDetails,\
                  statistics&key={}&id={}",
                 cfg.youtube_key.as_ref().unwrap(),
@@ -55,9 +53,8 @@ pub fn handle(cfg: &ServerCfg, mut response: Response, regex_match: bool) -> Res
                 } else {
                     path
                 }
-            ))?;
-            resp.read_to_string(&mut body)?;
-            let resp: JValue = serde_json::from_str(&body)?;
+            ))?
+                .json()?;
             let channel = resp.pointer("/items/0/snippet/channelTitle")
                 .unwrap()
                 .as_str()
@@ -279,9 +276,6 @@ fn walk_for_metadata(node: Handle, title: &mut String, description: &mut String)
 
 mod jisho {
     use reqwest;
-    use serde_json;
-
-    use std::io::Read;
 
     use errors::*;
 
@@ -319,19 +313,8 @@ mod jisho {
     }
 
     pub fn handle(input: &str, regex_match: bool) -> Result<String> {
-        let mut resp = reqwest::get(&(API_BASE.to_owned() + input))?;
-        let resp = if resp.status().is_success() {
-            let mut body = String::new();
-            resp.read_to_string(&mut body)?;
-            let resp: ApiResponse = serde_json::from_str(&body)?;
-            if resp.meta.status == 200 {
-                resp.data
-            } else {
-                return Err(ErrorKind::NoExtractableData.into());
-            }
-        } else {
-            return Err(ErrorKind::NoExtractableData.into());
-        };
+        let resp: ApiResponse = reqwest::get(&(API_BASE.to_owned() + input))?.json()?;
+        let resp = resp.data;
 
         let mut ret = if regex_match {
             String::from("┗━ ")

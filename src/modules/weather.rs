@@ -73,12 +73,12 @@ pub fn init(cfg: &Config, log: &Logger) -> Result<()> {
                 Err(err)
             })?;
 
-        debug!(log, "Location cache: {:?}", &locations);
+        info!(log, "Location cache: {:?}", &locations);
         for q in locations {
             lc.insert((srv.address.clone(), q.nick.clone()), q.location);
         }
         lc.shrink_to_fit();
-        debug!(log, "Geocode cache: {:?}", &geocodes);
+        info!(log, "Geocode cache: {:?}", &geocodes);
         for g in geocodes {
             gc.insert(
                 g.location.clone(),

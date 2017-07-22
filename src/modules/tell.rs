@@ -30,22 +30,21 @@ use models;
 use schema;
 use schema::pending_tells::dsl;
 
-// TODO: Switch to proper cache
 lazy_static!{
-    static ref PENDING_TELLS_HM: Mutex<HashMap<String, Mutex<usize>>> = {
+    static ref PENDING_TELLS: Mutex<HashMap<String, Mutex<usize>>> = {
         Mutex::new(HashMap::new())
     };
 }
 
 // Read DB to get init values
 pub fn init(cfg: &Config, log: &Logger) -> Result<()> {
-    let mut hm = PENDING_TELLS_HM.lock();
+    let mut hm = PENDING_TELLS.lock();
     for srv in &cfg.servers {
         let conn = super::establish_database_connection(srv, log)?;
         let tells = dsl::pending_tells
             .filter(dsl::server_addr.eq(&srv.address))
             .load::<models::PendingTell>(&conn)?;
-        debug!(log, "Pending tells: {:?}", &tells);
+        info!(log, "Pending tells: {:?}", &tells);
         hm.insert(srv.address.clone(), Mutex::new(tells.len()));
         hm.shrink_to_fit();
     }
@@ -58,7 +57,7 @@ pub fn handle_user_join(
     log: &Logger,
     msg: &Message,
 ) -> Result<()> {
-    let hm = PENDING_TELLS_HM.lock();
+    let hm = PENDING_TELLS.lock();
     let mut pending = hm.get(&cfg.address).unwrap().lock();
     if *pending != 0 {
         if let Command::JOIN(ref chan, ..) = msg.command {
@@ -110,7 +109,7 @@ pub fn handle_names_reply(
     log: &Logger,
     msg: &Message,
 ) -> Result<()> {
-    let hm = PENDING_TELLS_HM.lock();
+    let hm = PENDING_TELLS.lock();
     let mut pending = hm.get(&cfg.address).unwrap().lock();
     if *pending != 0 {
         if let Command::Response(Response::RPL_NAMREPLY, ref chan, ref users) = msg.command {
@@ -121,7 +120,12 @@ pub fn handle_names_reply(
                 .unwrap()
                 .split(' ')
                 .filter(|u| u != &cfg.nickname)
-                .map(|u| u.replace('@', "").replace('+', ""))
+                .map(|u| {
+                    u.replace('%', "")
+                        .replace('~', "")
+                        .replace('@', "")
+                        .replace('+', "")
+                })
                 .collect::<Vec<_>>();
 
             let conn = super::establish_database_connection(cfg, log)?;
@@ -226,7 +230,7 @@ pub fn add(cfg: &ServerCfg, log: &Logger, msg: &Message, private: bool) -> Resul
                 Err(ErrorKind::Diesel(err).into())
             })
             .and_then(|_| {
-                let mut hm = PENDING_TELLS_HM.lock();
+                let mut hm = PENDING_TELLS.lock();
                 *hm.get_mut(&cfg.address).unwrap().lock() += 1;
 
                 Ok(format!(
