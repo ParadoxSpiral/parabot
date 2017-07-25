@@ -303,35 +303,25 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                         } else {
                             url.as_str().to_owned()
                         };
-                        let res = reqwest::get(&url);
-                        if let Ok(res) = res {
-                            if res.status().is_success() {
-                                // FIXME: Can be made to (elegantly) not clone with NLL
-                                let domain = res.url().domain().unwrap().to_owned();
-                                if private ||
-                                    !cfg.channels.iter().any(|c| {
-                                        &*c.name == &*target &&
-                                            c.url_blacklisted_domains
-                                                .iter()
-                                                .any(|ds| ds.iter().any(|d| &*d == &*domain))
-                                    }) {
-                                    let reply_target = msg.response_target().unwrap();
-                                    let reply = url::handle(cfg, res, true)?;
-                                    if module_enabled_channel(cfg, &*target, "wormy") {
-                                        LAST_MESSAGE.store(true, Ordering::Release);
-                                    }
-                                    send_segmented_message(
-                                        cfg,
-                                        srv,
-                                        log,
-                                        reply_target,
-                                        &reply,
-                                        false,
-                                    )?;
+                        let client = reqwest::Client::new()?;
+                        let res = client.head(&url)?.send()?;
+                        if res.status().is_success() {
+                            // FIXME: Can be made to (elegantly) not clone with NLL
+                            let domain = res.url().domain().unwrap().to_owned();
+                            if private ||
+                                !cfg.channels.iter().any(|c| {
+                                    &*c.name == &*target &&
+                                        c.url_blacklisted_domains
+                                            .iter()
+                                            .any(|ds| ds.iter().any(|d| &*d == &*domain))
+                                }) {
+                                let reply_target = msg.response_target().unwrap();
+                                let reply = url::handle(cfg, client, res, true)?;
+                                if module_enabled_channel(cfg, &*target, "wormy") {
+                                    LAST_MESSAGE.store(true, Ordering::Release);
                                 }
+                                send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
                             }
-                        } else {
-                            trace!(log, "Failed reqwest; Res: {:?}", res);
                         }
                     }
                 }
@@ -408,14 +398,14 @@ fn send_segmented_message(
                             if graphemes.peek().unwrap().parse::<usize>().is_ok() {
                                 // \x031,15
                                 let third = graphemes.next().unwrap();
-                                count += 5;
+                                count += 6;
                                 color_code.push_str(first);
                                 color_code.push_str(",");
                                 color_code.push_str(second);
                                 color_code.push_str(third);
                             } else {
                                 // \x031,1
-                                count += 4;
+                                count += 5;
                                 color_code.push_str(first);
                                 color_code.push_str(",");
                                 color_code.push_str(second);
@@ -429,7 +419,7 @@ fn send_segmented_message(
                                 let third = graphemes.next().unwrap();
                                 if graphemes.peek().unwrap().parse::<usize>().is_ok() {
                                     // \x0315,15
-                                    count += 6;
+                                    count += 7;
                                     let fourth = graphemes.next().unwrap();
                                     color_code.push_str(first);
                                     color_code.push_str(second);
@@ -438,7 +428,7 @@ fn send_segmented_message(
                                     color_code.push_str(fourth);
                                 } else {
                                     // \x0315,1
-                                    count += 5;
+                                    count += 6;
                                     color_code.push_str(first);
                                     color_code.push_str(second);
                                     color_code.push_str(",");
@@ -447,13 +437,13 @@ fn send_segmented_message(
                             } else {
                                 // \x0315
                                 let second = graphemes.next().unwrap();
-                                count += 3;
+                                count += 4;
                                 color_code.push_str(first);
                                 color_code.push_str(second);
                             }
                         } else {
                             // \x031
-                            count += 2;
+                            count += 3;
                             color_code.push_str(first);
                         }
                         unescaped_controls[1] = true;

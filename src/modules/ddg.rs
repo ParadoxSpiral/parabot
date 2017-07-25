@@ -62,20 +62,16 @@ pub fn handle(
         }
         Type::Article | Type::Name => Ok(format!("{}: {}", resp.abstract_url, resp.abstract_text)),
         Type::Exclusive => {
-            let res = reqwest::get(&resp.redirect);
-            if let Ok(res) = res {
-                if res.status().is_success() {
-                    if show_redirect {
-                        return Ok(
-                            format!("{}: ", resp.redirect) +
-                                &super::url::handle(cfg, res, regex_match)?,
-                        );
-                    } else {
-                        return Ok(super::url::handle(cfg, res, regex_match)?);
-                    }
-                }
+            let client = reqwest::Client::new()?;
+            let res = client.get(&resp.redirect)?.send()?;
+            if show_redirect {
+                Ok(
+                    format!("{}: ", resp.redirect) +
+                        &super::url::handle(cfg, client, res, regex_match)?,
+                )
+            } else {
+                Ok(super::url::handle(cfg, client, res, regex_match)?)
             }
-            Err(ErrorKind::NoExtractableData.into())
         }
         Type::Nothing => unimplemented!("{:?}", resp),
     }

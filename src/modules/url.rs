@@ -22,10 +22,9 @@ use html5ever::rcdom::{NodeData, RcDom, Handle};
 use html5ever::tendril::TendrilSink;
 use humansize::{FileSize, file_size_opts as Options};
 use percent_encoding::percent_decode;
-use reqwest;
 use reqwest::header::{ContentLength, ContentType, Headers};
 use reqwest::mime;
-use reqwest::Response;
+use reqwest::{Client, Response};
 use serde_json::Value as JValue;
 use wolfram_alpha::query;
 
@@ -35,7 +34,12 @@ use std::io::{Cursor, Read};
 use config::ServerCfg;
 use errors::*;
 
-pub fn handle(cfg: &ServerCfg, mut response: Response, regex_match: bool) -> Result<String> {
+pub fn handle(
+    cfg: &ServerCfg,
+    client: Client,
+    response: Response,
+    regex_match: bool,
+) -> Result<String> {
     let domain = response.url().domain().unwrap().to_owned();
 
     // Invoke either site specific or generic handler
@@ -44,7 +48,7 @@ pub fn handle(cfg: &ServerCfg, mut response: Response, regex_match: bool) -> Res
         let mut query = response.url().query_pairs();
         if path == "watch" || domain.ends_with("youtu.be") {
             let v = query.find(|&(ref k, _)| k == "v").unwrap().1;
-            let resp: JValue = reqwest::get(&format!(
+            let resp: JValue = client.get(&format!(
                 "https://www.googleapis.com/youtube/v3/videos?part=status,snippet,contentDetails,\
                  statistics&key={}&id={}",
                 cfg.youtube_key.as_ref().unwrap(),
@@ -53,7 +57,7 @@ pub fn handle(cfg: &ServerCfg, mut response: Response, regex_match: bool) -> Res
                 } else {
                     path
                 }
-            ))?
+            ))?.send()?
                 .json()?;
             let channel = resp.pointer("/items/0/snippet/channelTitle")
                 .unwrap()
@@ -145,6 +149,7 @@ pub fn handle(cfg: &ServerCfg, mut response: Response, regex_match: bool) -> Res
         }
     } else if domain.ends_with("jisho.org") {
         jisho::handle(
+            client,
             percent_decode(
                 response
                     .url()
@@ -158,8 +163,6 @@ pub fn handle(cfg: &ServerCfg, mut response: Response, regex_match: bool) -> Res
             regex_match,
         )
     } else {
-        let mut bytes = Vec::new();
-        response.read_to_end(&mut bytes)?;
         let headers = response.headers();
         let content_length = headers.get::<ContentLength>();
         let content_type = headers.get::<ContentType>();
@@ -174,6 +177,10 @@ pub fn handle(cfg: &ServerCfg, mut response: Response, regex_match: bool) -> Res
             }
             (None, Some(mime)) if mime.0.subtype() != mime::HTML => Ok(format!("┗━ {}", mime)),
             (_, Some(mime)) if mime.0.subtype() == mime::HTML => {
+                let mut response = client.get(response.url().as_str())?.send()?;
+                let mut bytes = Vec::new();
+                response.read_to_end(&mut bytes)?;
+
                 let dom = body_from_charsets(bytes, headers).and_then(|body| {
                     Ok(html5ever::parse_document(
                         RcDom::default(),
@@ -279,7 +286,7 @@ fn walk_for_metadata(node: Handle, title: &mut String, description: &mut String)
 }
 
 mod jisho {
-    use reqwest;
+    use reqwest::Client;
 
     use errors::*;
 
@@ -316,8 +323,8 @@ mod jisho {
         pub parts_of_speech: Vec<String>,
     }
 
-    pub fn handle(input: &str, regex_match: bool) -> Result<String> {
-        let resp: ApiResponse = reqwest::get(&(API_BASE.to_owned() + input))?.json()?;
+    pub fn handle(client: Client, input: &str, regex_match: bool) -> Result<String> {
+        let resp: ApiResponse = client.get(&(API_BASE.to_owned() + input))?.send()?.json()?;
         let resp = resp.data;
 
         let mut ret = if regex_match {
