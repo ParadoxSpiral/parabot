@@ -55,3 +55,7 @@ version = "0.4"
 [dependencies.forecast]
 git = "https://github.com/ParadoxSpiral/forecast-rs"
 version = "1.0"
+
+[features]
+default = ["show_description"]
+show_description = [] # Show the description meta tag in url-info

@@ -178,9 +178,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                     }
                     return Err(ErrorKind::ExitRequested.into());
                 } else if &content[1..] == "who" && module_enabled_channel(cfg, &*target, "wormy") {
-                    if module_enabled_channel(cfg, &*target, "wormy") &&
-                        LAST_MESSAGE.load(Ordering::Acquire)
-                    {
+                    if LAST_MESSAGE.load(Ordering::Acquire) {
                         send_segmented_message(
                             cfg,
                             srv,

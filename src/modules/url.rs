@@ -182,6 +182,8 @@ pub fn handle(cfg: &ServerCfg, mut response: Response, regex_match: bool) -> Res
                         .read_from(&mut Cursor::new(body))?)
                 })?;
 
+                let show_description = cfg!(feature = "show_description");
+
                 let mut title = String::new();
                 let mut description = String::new();
                 walk_for_metadata(dom.document, &mut title, &mut description);
@@ -189,11 +191,13 @@ pub fn handle(cfg: &ServerCfg, mut response: Response, regex_match: bool) -> Res
                 let description = description.trim();
                 if title.is_empty() {
                     Err(ErrorKind::NoExtractableData.into())
-                } else if description.is_empty() || domain.ends_with("imgur.com") ||
-                           domain.ends_with("github.com")
+                } else if !show_description ||
+                           ((description.is_empty() || domain.ends_with("imgur.com") ||
+                                 domain.ends_with("github.com")) &&
+                                !description.contains(title))
                 {
                     Ok(format!("┗━ {}", title))
-                } else if description.starts_with(&title) || description.ends_with(&title) {
+                } else if description.contains(title) {
                     Ok(format!("┗━ {}", description))
                 } else {
                     Ok(format!("┗━ {} - {}", title, description))

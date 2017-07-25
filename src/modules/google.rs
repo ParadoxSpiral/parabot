@@ -44,14 +44,22 @@ pub fn handle(cfg: &ServerCfg, msg: &str) -> Result<String> {
                 "\x02{}\x02: {} [{}]; ",
                 n + 1,
                 item.pointer("/link").unwrap().as_str().unwrap(),
-                item.pointer("/snippet").unwrap().as_str().unwrap().replace('\n', "")
+                item.pointer("/snippet")
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .replace('\n', "")
             ));
         } else {
             formatted.push_str(&format!(
                 "\x02{}\x02: {} [{}]",
                 n + 1,
                 item.pointer("/link").unwrap().as_str().unwrap(),
-                item.pointer("/snippet").unwrap().as_str().unwrap().replace('\n', "")
+                item.pointer("/snippet")
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .replace('\n', "")
             ));
         }
     }
