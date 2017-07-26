@@ -20,7 +20,7 @@ use diesel::sqlite::SqliteConnection;
 use irc::client::prelude::*;
 use parking_lot::RwLock;
 use regex::Regex;
-use reqwest;
+use reqwest::Url;
 use slog::Logger;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -168,7 +168,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                         )?
                     }
                 } else if &content[1..] == "exit" || &content[1..] == "quit" ||
-                           &content[1..] == "part"
+                    &content[1..] == "part"
                 {
                     ::SHOULD_CONTINUE.store(false, Ordering::Release);
                     // Make all sleeping threads act on this
@@ -189,7 +189,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                         )?;
                     }
                 } else if (private || module_enabled_channel(cfg, &*target, "tell")) &&
-                           content[1..].starts_with("tell")
+                    content[1..].starts_with("tell")
                 {
                     trace!(log, "Starting .tell");
                     let reply = tell::add(cfg, log, msg, private)?;
@@ -198,7 +198,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                     }
                     send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
                 } else if (private || module_enabled_channel(cfg, &*target, "duckduckgo")) &&
-                           content[1..].starts_with("ddg")
+                    content[1..].starts_with("ddg")
                 {
                     trace!(log, "Starting .ddg");
                     let reply = ddg::handle(cfg, content[4..].trim(), true, false)?;
@@ -207,7 +207,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                     }
                     send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
                 } else if (private || module_enabled_channel(cfg, &*target, "google")) &&
-                           content[1..].starts_with("g")
+                    content[1..].starts_with("g")
                 {
                     trace!(log, "Starting .g");
                     let reply = google::handle(cfg, content[2..].trim())?;
@@ -216,7 +216,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                     }
                     send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
                 } else if (private || module_enabled_channel(cfg, &*target, "wolframalpha")) &&
-                           content[1..].starts_with("wa")
+                    content[1..].starts_with("wa")
                 {
                     trace!(log, "Starting .ddg !wa");
                     let reply = ddg::handle(
@@ -230,7 +230,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                     }
                     send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
                 } else if (private || module_enabled_channel(cfg, &*target, "jisho")) &&
-                           content[1..].starts_with("jisho")
+                    content[1..].starts_with("jisho")
                 {
                     trace!(log, "Starting .ddg !jisho");
                     let reply = ddg::handle(
@@ -244,7 +244,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                     }
                     send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
                 } else if (private || module_enabled_channel(cfg, &*target, "weather")) &&
-                           content[1..].starts_with("weather")
+                    content[1..].starts_with("weather")
                 {
                     trace!(log, "Starting .weather");
                     let nick = msg.source_nickname().unwrap();
@@ -290,40 +290,36 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                             ").unwrap();
                 );
                 for cap in URL_REGEX.captures_iter(content) {
-                    let url = cap.name("url_v1").or_else(|| cap.name("url_v2"));
                     let proto = cap.name("protocol_v1").or_else(|| cap.name("protocol_v2"));
-                    if let Some(url) = url {
+                    let url = cap.name("url_v1").or_else(|| cap.name("url_v2")).unwrap();
+                    let _ = if proto.is_none() {
+                        // Fuck everything that uses http in these let's encrypt days
+                        let mut u = String::with_capacity(url.as_str().len() + 8);
+                        u.push_str("https://");
+                        u.push_str(url.as_str());
+                        Url::parse(&u)
+                    } else {
+                        Url::parse(url.as_str())
+                    }.map(|url| {
                         trace!(log, "URL match: {:?}", url);
-                        let url = if proto.is_none() {
-                            // Fuck everything that uses http in these let's encrypt days
-                            let mut u = String::with_capacity(url.as_str().len() + 8);
-                            u.push_str(url.as_str());
-                            u.push_str("https://");
-                            u
-                        } else {
-                            url.as_str().to_owned()
-                        };
-                        let client = reqwest::Client::new()?;
-                        let res = client.head(&url)?.send()?;
-                        if res.status().is_success() {
-                            // FIXME: Can be made to (elegantly) not clone with NLL
-                            let domain = res.url().domain().unwrap().to_owned();
-                            if private ||
-                                !cfg.channels.iter().any(|c| {
-                                    &*c.name == &*target &&
-                                        c.url_blacklisted_domains
-                                            .iter()
-                                            .any(|ds| ds.iter().any(|d| &*d == &*domain))
-                                }) {
-                                let reply_target = msg.response_target().unwrap();
-                                let reply = url::handle(cfg, client, res, true)?;
-                                if module_enabled_channel(cfg, &*target, "wormy") {
-                                    LAST_MESSAGE.store(true, Ordering::Release);
-                                }
-                                send_segmented_message(cfg, srv, log, reply_target, &reply, false)?;
+
+                        if private || !cfg.channels.iter().any(|c| {
+                            let domain = url.domain().unwrap();
+                            &*c.name == &*target &&
+                                c.url_blacklisted_domains
+                                    .iter()
+                                    .any(|ds| ds.iter().any(|d| &*d == &*domain))
+                        }) {
+                            let reply_target = msg.response_target().unwrap();
+                            let reply = url::handle(cfg, url, true)?;
+                            if module_enabled_channel(cfg, &*target, "wormy") {
+                                LAST_MESSAGE.store(true, Ordering::Release);
                             }
+                            send_segmented_message(cfg, srv, log, reply_target, &reply, false)
+                        } else {
+                            Ok(())
                         }
-                    }
+                    });
                 }
             }
         }

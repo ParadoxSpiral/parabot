@@ -42,54 +42,42 @@ pub fn handle(cfg: &ServerCfg, target: &str, msg: &str, private: bool) -> Option
     } else {
         // Starts with help, e.g. more args
         match msg[6..].trim() {
-            "bots" | ".bots" => {
-                Some(
-                    ".bots will (hopefully) cause all bots in the channel to reply.".to_owned(),
-                )
-            }
-            "ddg" | ".ddg" => {
-                Some(
-                    ".ddg <search> uses ddg's instant answer API to perform a search.".to_owned(),
-                )
-            }
-            "tell" | ".tell" => {
-                Some(
-                    ".tell <nick> <message> will tell the user with <nick> <message>, \
-                     when they join a channel shared with me."
-                        .to_owned(),
-                )
-            }
-            "weather" | ".weather" => {
-                Some("`.weather [<n|x-y><d|h>] [location]` will show weather information \
+            "bots" | ".bots" => Some(
+                ".bots will (hopefully) cause all bots in the channel to reply.".to_owned(),
+            ),
+            "ddg" | ".ddg" => Some(
+                ".ddg <search> uses ddg's instant answer API to perform a search.".to_owned(),
+            ),
+            "tell" | ".tell" => Some(
+                ".tell <nick> <message> will tell the user with <nick> <message>, \
+                 when they join a channel shared with me."
+                    .to_owned(),
+            ),
+            "weather" | ".weather" => Some(
+                "`.weather [<n|x-y><d|h>] [location]` will show weather information \
                  powered by Dark Sky. If you specify `n` and `d` xor `h`, data of the next \
                  `n`th`d|h` will be replied with. Specifying a range of `x-y` will use data of \
                  that range. Data is available for the next 168h, or 7d. If you omit `location`, \
                  the location you last used will be used."
-                    .to_owned())
-            }
-            "url-info" | "url" => {
-                Some(
-                    "url-info fetches urls posted in the channel and displays their metadata, \
-                     and, depending on the website, more. Current additional metadata: wolframalpha\
-                     , jisho, youtube."
-                        .to_owned(),
-                )
-            }
-            "who" | ".who" => {
-                Some(
-                    "If parabot runs as part of a wormy hivemind(e.g. sees messages from other \
-                     bots as his own nick), this will inform the user whether parabot answered the \
-                     last command."
-                        .to_owned(),
-                )
-            }
-            _ => {
-                if super::module_enabled_channel(cfg, &*target, "wormy") {
-                    None
-                } else {
-                    Some("Unknown or undocumented module, sorry.".into())
-                }
-            }
+                    .to_owned(),
+            ),
+            "url-info" | "url" => Some(
+                "url-info fetches urls posted in the channel and displays their metadata, \
+                 and, depending on the website, more. Current additional metadata: wolframalpha\
+                 , jisho, youtube."
+                    .to_owned(),
+            ),
+            "who" | ".who" => Some(
+                "If parabot runs as part of a wormy hivemind(e.g. sees messages from other \
+                 bots as his own nick), this will inform the user whether parabot answered the \
+                 last command."
+                    .to_owned(),
+            ),
+            _ => if super::module_enabled_channel(cfg, &*target, "wormy") {
+                None
+            } else {
+                Some("Unknown or undocumented module, sorry.".into())
+            },
         }
     }
 }

@@ -121,9 +121,9 @@ pub fn parse_config(input: &str) -> Result<Config> {
                 &srv.address
             ).into());
         } else if srv.wolframalpha_appid.is_none() &&
-                   srv.channels
-                       .iter()
-                       .any(|c| c.modules.iter().any(|m| m == "wolframaplha"))
+            srv.channels
+                .iter()
+                .any(|c| c.modules.iter().any(|m| m == "wolframaplha"))
         {
             return Err(
                 format!(
@@ -132,9 +132,9 @@ pub fn parse_config(input: &str) -> Result<Config> {
                 ).into(),
             );
         } else if srv.youtube_key.is_none() &&
-                   srv.channels
-                       .iter()
-                       .any(|c| c.modules.iter().any(|m| m == "youtube"))
+            srv.channels
+                .iter()
+                .any(|c| c.modules.iter().any(|m| m == "youtube"))
         {
             return Err(
                 format!(
@@ -143,9 +143,9 @@ pub fn parse_config(input: &str) -> Result<Config> {
                 ).into(),
             );
         } else if srv.wormy_nick.is_none() &&
-                   srv.channels
-                       .iter()
-                       .any(|c| c.modules.iter().any(|m| m == "wormy"))
+            srv.channels
+                .iter()
+                .any(|c| c.modules.iter().any(|m| m == "wormy"))
         {
             return Err(
                 format!(
@@ -154,9 +154,9 @@ pub fn parse_config(input: &str) -> Result<Config> {
                 ).into(),
             );
         } else if (srv.google_search_id.is_none() || srv.google_search_key.is_none()) &&
-                   srv.channels
-                       .iter()
-                       .any(|c| c.modules.iter().any(|m| m == "google"))
+            srv.channels
+                .iter()
+                .any(|c| c.modules.iter().any(|m| m == "google"))
         {
             return Err(
                 format!(

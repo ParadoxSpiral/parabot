@@ -18,13 +18,14 @@
 use encoding::DecoderTrap;
 use encoding::label::encoding_from_whatwg_label;
 use html5ever;
-use html5ever::rcdom::{NodeData, RcDom, Handle};
+use html5ever::rcdom::{Handle, NodeData, RcDom};
 use html5ever::tendril::TendrilSink;
 use humansize::{FileSize, file_size_opts as Options};
 use percent_encoding::percent_decode;
+use reqwest;
+use reqwest::{Client, Url};
 use reqwest::header::{ContentLength, ContentType, Headers};
 use reqwest::mime;
-use reqwest::{Client, Response};
 use serde_json::Value as JValue;
 use wolfram_alpha::query;
 
@@ -34,21 +35,16 @@ use std::io::{Cursor, Read};
 use config::ServerCfg;
 use errors::*;
 
-pub fn handle(
-    cfg: &ServerCfg,
-    client: Client,
-    response: Response,
-    regex_match: bool,
-) -> Result<String> {
-    let domain = response.url().domain().unwrap().to_owned();
+pub fn handle(cfg: &ServerCfg, url: Url, regex_match: bool) -> Result<String> {
+    let domain = url.domain().unwrap().to_owned();
 
     // Invoke either site specific or generic handler
     if domain.ends_with("youtube.com") || domain.ends_with("youtu.be") {
-        let path = response.url().path_segments().unwrap().last().unwrap();
-        let mut query = response.url().query_pairs();
+        let path = url.path_segments().unwrap().last().unwrap();
+        let mut query = url.query_pairs();
         if path == "watch" || domain.ends_with("youtu.be") {
             let v = query.find(|&(ref k, _)| k == "v").unwrap().1;
-            let resp: JValue = client.get(&format!(
+            let resp: JValue = reqwest::get(&format!(
                 "https://www.googleapis.com/youtube/v3/videos?part=status,snippet,contentDetails,\
                  statistics&key={}&id={}",
                 cfg.youtube_key.as_ref().unwrap(),
@@ -57,7 +53,7 @@ pub fn handle(
                 } else {
                     path
                 }
-            ))?.send()?
+            ))?
                 .json()?;
             let channel = resp.pointer("/items/0/snippet/channelTitle")
                 .unwrap()
@@ -121,7 +117,7 @@ pub fn handle(
             unimplemented!("{}, {:?}", path, query)
         }
     } else if domain.ends_with("wolframalpha.com") {
-        let query = percent_decode(response.url().query().unwrap().as_bytes())
+        let query = percent_decode(url.query().unwrap().as_bytes())
             .decode_utf8()?;
         let query: &str = query.borrow();
         assert_eq!("i=", &query[..2]);
@@ -149,35 +145,27 @@ pub fn handle(
         }
     } else if domain.ends_with("jisho.org") {
         jisho::handle(
-            client,
-            percent_decode(
-                response
-                    .url()
-                    .path_segments()
-                    .unwrap()
-                    .last()
-                    .unwrap()
-                    .as_bytes(),
-            ).decode_utf8()?
+            percent_decode(url.path_segments().unwrap().last().unwrap().as_bytes())
+                .decode_utf8()?
                 .borrow(),
             regex_match,
         )
     } else {
+        let client = Client::new()?;
+        let response = client.head(url.as_str())?.send()?;
         let headers = response.headers();
         let content_length = headers.get::<ContentLength>();
         let content_type = headers.get::<ContentType>();
 
         match (content_length, content_type) {
-            (Some(l), Some(mime)) if mime.0.subtype() != mime::HTML => {
-                Ok(format!(
-                    "┗━ {}; {}",
-                    mime,
-                    l.file_size(Options::BINARY).unwrap()
-                ))
-            }
+            (Some(l), Some(mime)) if mime.0.subtype() != mime::HTML => Ok(format!(
+                "┗━ {}; {}",
+                mime,
+                l.file_size(Options::BINARY).unwrap()
+            )),
             (None, Some(mime)) if mime.0.subtype() != mime::HTML => Ok(format!("┗━ {}", mime)),
             (_, Some(mime)) if mime.0.subtype() == mime::HTML => {
-                let mut response = client.get(response.url().as_str())?.send()?;
+                let mut response = client.get(url.as_str())?.send()?;
                 let mut bytes = Vec::new();
                 response.read_to_end(&mut bytes)?;
 
@@ -199,9 +187,9 @@ pub fn handle(
                 if title.is_empty() {
                     Err(ErrorKind::NoExtractableData.into())
                 } else if !show_description ||
-                           ((description.is_empty() || domain.ends_with("imgur.com") ||
-                                 domain.ends_with("github.com")) &&
-                                !description.contains(title))
+                    ((description.is_empty() || domain.ends_with("imgur.com") ||
+                        domain.ends_with("github.com")) &&
+                        !description.contains(title))
                 {
                     Ok(format!("┗━ {}", title))
                 } else if description.contains(title) {
@@ -251,29 +239,27 @@ fn walk_for_metadata(node: Handle, title: &mut String, description: &mut String)
             ref name,
             ref attrs,
             ..
-        } => {
-            if &*name.local == "title" && title.is_empty() {
-                for child in node.children.borrow().iter() {
-                    if let NodeData::Text { ref contents } = child.data {
-                        let text = contents.borrow();
-                        let text = text.trim();
-                        if text != "" && text != "\n" {
-                            title.push_str(text);
-                        }
-                    }
-                }
-            } else if &*name.local == "meta" {
-                let mut in_description = false;
-                for attr in attrs.borrow().iter() {
-                    if &*attr.name.local == "name" && &*attr.value == "description" {
-                        in_description = true;
-                    } else if &*attr.name.local == "content" && in_description {
-                        in_description = false;
-                        description.push_str(attr.value.trim());
+        } => if &*name.local == "title" && title.is_empty() {
+            for child in node.children.borrow().iter() {
+                if let NodeData::Text { ref contents } = child.data {
+                    let text = contents.borrow();
+                    let text = text.trim();
+                    if text != "" && text != "\n" {
+                        title.push_str(text);
                     }
                 }
             }
-        }
+        } else if &*name.local == "meta" {
+            let mut in_description = false;
+            for attr in attrs.borrow().iter() {
+                if &*attr.name.local == "name" && &*attr.value == "description" {
+                    in_description = true;
+                } else if &*attr.name.local == "content" && in_description {
+                    in_description = false;
+                    description.push_str(attr.value.trim());
+                }
+            }
+        },
         NodeData::ProcessingInstruction { .. } => unreachable!(),
         NodeData::Document { .. } |
         NodeData::Doctype { .. } |
@@ -286,7 +272,7 @@ fn walk_for_metadata(node: Handle, title: &mut String, description: &mut String)
 }
 
 mod jisho {
-    use reqwest::Client;
+    use reqwest;
 
     use errors::*;
 
@@ -323,8 +309,8 @@ mod jisho {
         pub parts_of_speech: Vec<String>,
     }
 
-    pub fn handle(client: Client, input: &str, regex_match: bool) -> Result<String> {
-        let resp: ApiResponse = client.get(&(API_BASE.to_owned() + input))?.send()?.json()?;
+    pub fn handle(input: &str, regex_match: bool) -> Result<String> {
+        let resp: ApiResponse = reqwest::get(&(API_BASE.to_owned() + input))?.json()?;
         let resp = resp.data;
 
         let mut ret = if regex_match {

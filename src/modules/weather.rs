@@ -20,13 +20,13 @@ use chrono::prelude::*;
 use chrono_tz::Tz;
 use diesel;
 use diesel::prelude::*;
-use forecast::{Alert, ApiResponse, ApiClient, DataPoint, ForecastRequestBuilder, ExcludeBlock,
-               ExtendBy, Units};
+use forecast::{Alert, ApiClient, ApiResponse, DataPoint, ExcludeBlock, ExtendBy,
+               ForecastRequestBuilder, Units};
 use irc::client::prelude::*;
 use parking_lot::RwLock;
 use regex::Regex;
 use reqwest::Client;
-use reqwest::header::{Encoding, AcceptEncoding, qitem};
+use reqwest::header::{qitem, AcceptEncoding, Encoding};
 use serde_json::de;
 use serde_json::Value;
 use slog::Logger;

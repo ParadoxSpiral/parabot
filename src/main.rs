@@ -16,7 +16,7 @@
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
 #![feature(const_fn, inclusive_range, inclusive_range_syntax)]
-#![recursion_limit="128"]
+#![recursion_limit = "128"]
 
 extern crate chrono;
 extern crate chrono_tz;
@@ -82,6 +82,7 @@ mod errors {
             Ddg(::ddg::query::Error);
             WolframAlpha(::wolfram_alpha::Error);
             Json(::serde_json::Error);
+            UrlParse(::reqwest::UrlError);
         }
         errors {
             NoExtractableData {

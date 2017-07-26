@@ -15,9 +15,9 @@
 // You should have received a copy of the GNU General Public License
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
-use ddg::{RelatedTopic, Type, Query};
+use ddg::{Query, RelatedTopic, Type};
 use ddg::response::TopicResult;
-use reqwest;
+use reqwest::Url;
 
 use config::ServerCfg;
 use errors::*;
@@ -62,15 +62,13 @@ pub fn handle(
         }
         Type::Article | Type::Name => Ok(format!("{}: {}", resp.abstract_url, resp.abstract_text)),
         Type::Exclusive => {
-            let client = reqwest::Client::new()?;
-            let res = client.get(&resp.redirect)?.send()?;
+            let url = Url::parse(&resp.redirect)?;
             if show_redirect {
                 Ok(
-                    format!("{}: ", resp.redirect) +
-                        &super::url::handle(cfg, client, res, regex_match)?,
+                    format!("{}: ", resp.redirect) + &super::url::handle(cfg, url, regex_match)?,
                 )
             } else {
-                Ok(super::url::handle(cfg, client, res, regex_match)?)
+                Ok(super::url::handle(cfg, url, regex_match)?)
             }
         }
         Type::Nothing => unimplemented!("{:?}", resp),
