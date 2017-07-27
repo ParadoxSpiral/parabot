@@ -81,6 +81,9 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
         Command::PONG(..) |
         Command::QUIT(..) |
         Command::Response(Response::RPL_TOPICWHOTIME, ..) => trace!(log, "{:?}", msg),
+        Command::Raw(ref s, ..) if s == "250" || s == "265" || s == "266" => {
+            trace!(log, "{:?}", msg)
+        }
         Command::Response(Response::ERR_NOCHANMODES, ref content, ..) => {
             // Happens if the bot tries to join a protected channel before registration
             debug!(
@@ -91,17 +94,10 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
             if let Some(key) = cfg.channels
                 .iter()
                 .find(|c| c.name == content[1])
-                .unwrap()
-                .password
-                .clone()
+                .and_then(|c| c.password.as_ref())
             {
-                srv.send_join_with_keys(&content[1], &key)?
-            } else {
-                srv.send_join(&content[1])?
+                srv.send_join_with_keys(&content[1], key)?
             }
-        }
-        Command::Raw(ref s, ..) if s == "250" || s == "265" || s == "266" => {
-            trace!(log, "{:?}", msg)
         }
         Command::Raw(ref s, ..) if s == "MODE" => {
             trace!(log, "Received MODE, hostname: {:?}", msg.prefix);
