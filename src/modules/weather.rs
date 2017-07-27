@@ -548,7 +548,6 @@ pub fn handle(
                             &a.regions,
                             a.description
                         ),
-                        false,
                     )?;
                 }
             }
@@ -565,11 +564,11 @@ pub fn handle(
         if days {
             data = &res.daily.as_ref().unwrap().data[0];
             formatted.push_str(&format!("Today's weather in {} is ", reverse_location));
-            format_data_point(&mut formatted, &data);
+            format_data_point(&mut formatted, data);
         } else {
             data = res.currently.as_ref().unwrap();
             formatted.push_str(&format!("Current weather in {} is ", reverse_location));
-            format_data_point(&mut formatted, &data);
+            format_data_point(&mut formatted, data);
         }
     } else if range.start == range.end {
         let data;
@@ -580,7 +579,7 @@ pub fn handle(
                 range.start,
                 reverse_location
             ));
-            format_data_point(&mut formatted, &data);
+            format_data_point(&mut formatted, data);
         } else {
             data = &res.hourly.as_ref().unwrap().data[range.start];
             formatted.push_str(&format!(
@@ -588,7 +587,7 @@ pub fn handle(
                 range.start,
                 reverse_location
             ));
-            format_data_point(&mut formatted, &data);
+            format_data_point(&mut formatted, data);
         }
     } else {
         let data;

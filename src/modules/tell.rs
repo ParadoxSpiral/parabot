@@ -183,9 +183,9 @@ fn send_tells(
             t.message
         );
         if t.channel.is_some() {
-            super::send_segmented_message(cfg, srv, log, t.channel.as_ref().unwrap(), &msg, false)?;
+            super::send_segmented_message(cfg, srv, log, t.channel.as_ref().unwrap(), &msg)?;
         } else {
-            super::send_segmented_message(cfg, srv, log, &t.target_nick, &msg, false)?;
+            super::send_segmented_message(cfg, srv, log, &t.target_nick, &msg)?;
         }
     }
     Ok(())
