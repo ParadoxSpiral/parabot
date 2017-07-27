@@ -25,6 +25,7 @@ use slog::Logger;
 use unicode_segmentation::UnicodeSegmentation;
 
 use std::collections::HashMap;
+use std::process;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use config::{Config, ServerCfg};
@@ -170,13 +171,8 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                 } else if &content[1..] == "exit" || &content[1..] == "quit" ||
                     &content[1..] == "part"
                 {
-                    ::SHOULD_CONTINUE.store(false, Ordering::Release);
-                    // Make all sleeping threads act on this
-                    // TODO: Better impl would be to collect thread handles & wake them
-                    for _ in 0...unsafe { ::NUM_THREADS } {
-                        let _ = send_segmented_message(cfg, srv, log, &cfg.nickname, "", false);
-                    }
-                    return Err(ErrorKind::ExitRequested.into());
+                    info!(log, "Exit requested!");
+                    process::exit(2);
                 } else if &content[1..] == "who" && module_enabled_channel(cfg, &*target, "wormy") {
                     if LAST_MESSAGE.load(Ordering::Acquire) {
                         send_segmented_message(

@@ -61,7 +61,6 @@ use std::env;
 use std::fs::File;
 use std::io::Read;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 mod config;
 pub mod models;
@@ -88,13 +87,9 @@ mod errors {
             NoExtractableData {
                 description("The url did not serve any usable data")
             }
-            ExitRequested {
-                description("An owner requested the bot to exit")
-            }
         }
     }
 }
-use errors::*;
 
 // Init logging
 lazy_static!{
@@ -106,9 +101,6 @@ lazy_static!{
         Logger::root(drain, o!("version" => env!("CARGO_PKG_VERSION")))
     };
 }
-
-static SHOULD_CONTINUE: AtomicBool = AtomicBool::new(true);
-static mut NUM_THREADS: usize = 0;
 
 fn main() {
     // Read and parse config file
@@ -137,18 +129,16 @@ fn main() {
 
     // Spawn two threads per channel, incase modules lag on e.g. IO
     // TODO: Needs testing if this scales/is even necessary
-    unsafe {
-        NUM_THREADS = config.servers.iter().fold(
-            0,
-            |acc, srv| srv.channels.iter().fold(acc, |acc, _| acc + 2),
-        )
-    };
-    let pool = ThreadPool::new(unsafe { NUM_THREADS });
+    let threads = config.servers.iter().fold(
+        0,
+        |acc, srv| srv.channels.iter().fold(acc, |acc, _| acc + 2),
+    );
+    let pool = ThreadPool::new(threads);
     info!(
         SLOG_ROOT,
         "Created threadpool for {} threads in {} channels",
-        unsafe { NUM_THREADS },
-        unsafe { NUM_THREADS } / 2
+        threads,
+        threads / 2
     );
 
     // Init modules that require init
@@ -178,10 +168,6 @@ fn main() {
                 .unwrap();
             // Listen for, and handle, messages
             srv1.for_each_incoming(|msg| {
-                if !SHOULD_CONTINUE.load(Ordering::Acquire) {
-                    let e: Result<()> = Err(ErrorKind::ExitRequested.into());
-                    panic!("{:?}", e);
-                }
                 let cfg = cfg.clone();
                 let srv = srv2.clone();
                 let log = log.clone();
