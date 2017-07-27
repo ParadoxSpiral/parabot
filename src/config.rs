@@ -85,8 +85,8 @@ impl ServerCfg {
                 } else {
                     let mut hm = HashMap::with_capacity(self.channels.len());
                     for c in &self.channels {
-                        if c.password.is_some() {
-                            hm.insert(c.name.clone(), c.password.as_ref().unwrap().clone());
+                        if let Some(ref key) = c.password {
+                            hm.insert(c.name.clone(), key.clone());
                         }
                     }
                     hm.shrink_to_fit();

@@ -22,12 +22,7 @@ use reqwest::Url;
 use config::ServerCfg;
 use errors::*;
 
-pub fn handle(
-    cfg: &ServerCfg,
-    msg: &str,
-    show_redirect: bool,
-    regex_match: bool,
-) -> Result<String> {
+pub fn handle(cfg: &ServerCfg, msg: &str) -> Result<String> {
     let resp = Query::new(msg, "parabot").execute()?;
 
     match resp.response_type {
@@ -63,13 +58,9 @@ pub fn handle(
         Type::Article | Type::Name => Ok(format!("{}: {}", resp.abstract_url, resp.abstract_text)),
         Type::Exclusive => {
             let url = Url::parse(&resp.redirect)?;
-            if show_redirect {
-                Ok(
-                    format!("{}: ", resp.redirect) + &super::url::handle(cfg, url, regex_match)?,
-                )
-            } else {
-                Ok(super::url::handle(cfg, url, regex_match)?)
-            }
+            Ok(
+                format!("{}: ", resp.redirect) + &super::url::handle(cfg, url, false)?,
+            )
         }
         Type::Nothing => unimplemented!("{:?}", resp),
     }

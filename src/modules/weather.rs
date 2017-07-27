@@ -390,9 +390,7 @@ pub fn handle(
         } else if county != "" {
             revl.push_str(&format!("{}, ", county));
         }
-        if country != "" {
-            revl.push_str(country);
-        }
+        revl.push_str(country);
 
         GEOCODING_CACHE
             .write()

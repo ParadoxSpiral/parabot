@@ -150,6 +150,49 @@ pub fn handle(cfg: &ServerCfg, url: Url, regex_match: bool) -> Result<String> {
                 .borrow(),
             regex_match,
         )
+    } else if domain.contains(".google.") {
+        let body: JValue = reqwest::get(&format!(
+            "https://www.googleapis.com/customsearch/v1?num=3&fields=items\
+             &cx={}&key={}&q={}",
+            cfg.google_search_id.as_ref().unwrap(),
+            cfg.google_search_key.as_ref().unwrap(),
+            url.query_pairs().find(|&(ref k, _)| k == "q").unwrap().1
+        ))?
+            .json()?;
+
+        let mut formatted = String::new();
+        for (n, item) in body.pointer("/items")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .enumerate()
+        {
+            if n != 3 {
+                formatted.push_str(&format!(
+                    "\x02{}\x02: {} [{}]; ",
+                    n + 1,
+                    item.pointer("/link").unwrap().as_str().unwrap(),
+                    item.pointer("/snippet")
+                        .unwrap()
+                        .as_str()
+                        .unwrap()
+                        .replace('\n', "")
+                ));
+            } else {
+                formatted.push_str(&format!(
+                    "\x02{}\x02: {} [{}]",
+                    n + 1,
+                    item.pointer("/link").unwrap().as_str().unwrap(),
+                    item.pointer("/snippet")
+                        .unwrap()
+                        .as_str()
+                        .unwrap()
+                        .replace('\n', "")
+                ));
+            }
+        }
+        Ok(formatted)
     } else {
         let client = Client::new()?;
         let response = client.head(url.as_str())?.send()?;
