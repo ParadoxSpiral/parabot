@@ -259,49 +259,19 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                 }
             } else if private || module_enabled_channel(cfg, &*target, "url-info") {
                 lazy_static! (
-                        static ref URL_REGEX: Regex = Regex::new("\
-                            .*?\
-                            (?:\
-                                (?:\
-                                    <\
-                                    (?P<url_v1>\
-                                        (?P<protocol_v1>(?:(?:http)|(?:https))://){0,1}\
-                                            (?:\
-                                                [^\\s]*?\
-                                                \\.\
-                                            ){0,1}\
-                                        [^\\s]*?\
-                                        \\.{1}\
-                                        [^\\s]*\
-                                    )\
-                                    >\
-                                )|\
-                                (?:\
-                                    (?P<url_v2>\
-                                        (?P<protocol_v2>(?:(?:http)|(?:https))://){0,1}\
-                                            (?:\
-                                                [^\\s]*?\
-                                                \\.\
-                                            ){0,1}\
-                                        [^\\s]*?\
-                                        \\.{1}\
-                                        [^\\s]*\
-                            )))\
-                            .*?\
-                            ").unwrap();
+                    // FIXME: This disallows > in urls
+                    static ref URL_REGEX: Regex = Regex::new("\
+                        .*?\
+                        (?:\
+                            (?:<){0,}(?P<url>\
+                                (?:(?:http)|(?:https))://\
+                                (?:[^\\s>]*?\\.){1,}\
+                                [^\\s>]*\
+                            )(?:>){0,})\
+                        .*?").unwrap();
                 );
                 for cap in URL_REGEX.captures_iter(content) {
-                    let proto = cap.name("protocol_v1").or_else(|| cap.name("protocol_v2"));
-                    let url = cap.name("url_v1").or_else(|| cap.name("url_v2")).unwrap();
-                    let _ = if proto.is_none() {
-                        // Fuck everything that uses http in these let's encrypt days
-                        let mut u = String::with_capacity(url.as_str().len() + 8);
-                        u.push_str("https://");
-                        u.push_str(url.as_str());
-                        Url::parse(&u)
-                    } else {
-                        Url::parse(url.as_str())
-                    }.map(|url| {
+                    let _ = Url::parse(cap.name("url").unwrap().as_str()).map(|url| {
                         trace!(log, "URL match: {:?}", url);
 
                         if private || !cfg.channels.iter().any(|c| {

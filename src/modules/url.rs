@@ -44,6 +44,7 @@ pub fn handle(cfg: &ServerCfg, url: Url, regex_match: bool) -> Result<String> {
         let mut query = url.query_pairs();
         if path == "watch" || domain.ends_with("youtu.be") {
             let v = query.find(|&(ref k, _)| k == "v").unwrap().1;
+            let v = percent_decode(v.as_bytes()).decode_utf8()?;
             let resp: JValue = reqwest::get(&format!(
                 "https://www.googleapis.com/youtube/v3/videos?part=status,snippet,contentDetails,\
                  statistics&key={}&id={}",
@@ -117,14 +118,12 @@ pub fn handle(cfg: &ServerCfg, url: Url, regex_match: bool) -> Result<String> {
             unimplemented!("{}, {:?}", path, query)
         }
     } else if domain.ends_with("wolframalpha.com") {
-        let query = percent_decode(url.query().unwrap().as_bytes())
-            .decode_utf8()?;
-        let query: &str = query.borrow();
-        assert_eq!("i=", &query[..2]);
+        let i = url.query_pairs().find(|&(ref k, _)| k == "i").unwrap().1;
+        let i = percent_decode(i.as_bytes()).decode_utf8()?;
         let resp = query::query(
             None,
             cfg.wolframalpha_appid.as_ref().unwrap(),
-            &query[2..],
+            &i,
             Some(query::QueryParameters {
                 includepodid: Some("Result"),
                 reinterpret: Some("true"),
@@ -156,7 +155,13 @@ pub fn handle(cfg: &ServerCfg, url: Url, regex_match: bool) -> Result<String> {
              &cx={}&key={}&q={}",
             cfg.google_search_id.as_ref().unwrap(),
             cfg.google_search_key.as_ref().unwrap(),
-            url.query_pairs().find(|&(ref k, _)| k == "q").unwrap().1
+            percent_decode(
+                url.query_pairs()
+                    .find(|&(ref k, _)| k == "q")
+                    .unwrap()
+                    .1
+                    .as_bytes()
+            ).decode_utf8()?
         ))?
             .json()?;
 
@@ -315,6 +320,7 @@ fn walk_for_metadata(node: Handle, title: &mut String, description: &mut String)
 }
 
 mod jisho {
+    use percent_encoding::percent_decode;
     use reqwest;
 
     use errors::*;
@@ -353,7 +359,10 @@ mod jisho {
     }
 
     pub fn handle(input: &str, regex_match: bool) -> Result<String> {
-        let resp: ApiResponse = reqwest::get(&(API_BASE.to_owned() + input))?.json()?;
+        let resp: ApiResponse = reqwest::get(
+            &(API_BASE.to_owned() + &percent_decode(input.as_bytes()).decode_utf8()?),
+        )?
+            .json()?;
         let resp = resp.data;
 
         let mut ret = if regex_match {
