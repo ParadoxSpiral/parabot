@@ -27,6 +27,7 @@ use reqwest::{Client, Url};
 use reqwest::header::{ContentLength, ContentType, Headers};
 use reqwest::mime;
 use serde_json::Value as JValue;
+use urlshortener::{Provider, UrlShortener};
 use wolfram_alpha::query;
 
 use std::borrow::Borrow;
@@ -173,29 +174,21 @@ pub fn handle(cfg: &ServerCfg, url: Url, regex_match: bool) -> Result<String> {
             .iter()
             .enumerate()
         {
-            if n != 3 {
-                formatted.push_str(&format!(
-                    "\x02{}\x02: {} [{}]; ",
-                    n + 1,
-                    item.pointer("/link").unwrap().as_str().unwrap(),
-                    item.pointer("/snippet")
-                        .unwrap()
-                        .as_str()
-                        .unwrap()
-                        .replace('\n', "")
-                ));
-            } else {
-                formatted.push_str(&format!(
-                    "\x02{}\x02: {} [{}]",
-                    n + 1,
-                    item.pointer("/link").unwrap().as_str().unwrap(),
-                    item.pointer("/snippet")
-                        .unwrap()
-                        .as_str()
-                        .unwrap()
-                        .replace('\n', "")
-                ));
-            }
+            let url = item.pointer("/link").unwrap().as_str().unwrap();
+            formatted.push_str(&format!(
+                "\x02{}\x02: {} [{}]{}",
+                n + 1,
+                UrlShortener::new()?.try_generate(
+                    url,
+                    Some(vec![Provider::IsGd, Provider::VGd, Provider::HmmRs])
+                )?,
+                item.pointer("/snippet")
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .replace('\n', ""),
+                if n != 2 { "; " } else { "" }
+            ));
         }
         Ok(formatted)
     } else {

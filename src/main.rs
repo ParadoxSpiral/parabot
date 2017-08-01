@@ -38,6 +38,7 @@ extern crate slog_term;
 extern crate threadpool;
 extern crate toml;
 extern crate unicode_segmentation;
+extern crate urlshortener;
 extern crate wolfram_alpha;
 
 #[macro_use]
