@@ -190,7 +190,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                     content[1..].starts_with("ddg")
                 {
                     trace!(log, "Starting .ddg");
-                    let reply = ddg::handle(cfg, content[4..].trim())?;
+                    let reply = ddg::handle(cfg, content[4..].trim(), &*target)?;
                     if module_enabled_channel(cfg, &*target, "wormy") {
                         LAST_MESSAGE.store(true, Ordering::Release);
                     }
@@ -205,6 +205,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                             &("https://encrypted.google.com/search?q=".to_owned() +
                                 content[2..].trim()),
                         )?,
+                        &*target,
                         false,
                     )?;
                     if module_enabled_channel(cfg, &*target, "wormy") {
@@ -221,6 +222,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                             &("https://www.wolframalpha.com/input/?i=".to_owned() +
                                 content[3..].trim()),
                         )?,
+                        &*target,
                         false,
                     )?;
                     if module_enabled_channel(cfg, &*target, "wormy") {
@@ -236,6 +238,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                         Url::parse(
                             &("http://jisho.org/search/".to_owned() + content[6..].trim()),
                         )?,
+                        &*target,
                         false,
                     )?;
                     if module_enabled_channel(cfg, &*target, "wormy") {
@@ -280,7 +283,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                                     .any(|ds| ds.iter().any(|d| *d == *domain))
                         }) {
                             let reply_target = msg.response_target().unwrap();
-                            let reply = url::handle(cfg, url, true)?;
+                            let reply = url::handle(cfg, url, &*target, true)?;
                             if module_enabled_channel(cfg, &*target, "wormy") {
                                 LAST_MESSAGE.store(true, Ordering::Release);
                             }

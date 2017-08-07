@@ -22,7 +22,7 @@ use reqwest::Url;
 use config::ServerCfg;
 use errors::*;
 
-pub fn handle(cfg: &ServerCfg, msg: &str) -> Result<String> {
+pub fn handle(cfg: &ServerCfg, msg: &str, target: &str) -> Result<String> {
     let resp = Query::new(msg, "parabot").execute()?;
 
     match resp.response_type {
@@ -59,7 +59,7 @@ pub fn handle(cfg: &ServerCfg, msg: &str) -> Result<String> {
         Type::Exclusive => {
             let url = Url::parse(&resp.redirect)?;
             Ok(
-                format!("{}: ", resp.redirect) + &super::url::handle(cfg, url, false)?,
+                format!("{}: ", resp.redirect) + &super::url::handle(cfg, url, &*target, false)?,
             )
         }
         Type::Nothing => unimplemented!("{:?}", resp),

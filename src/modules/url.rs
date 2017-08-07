@@ -35,13 +35,16 @@ use std::io::{Cursor, Read};
 
 use config::ServerCfg;
 use errors::*;
+use super::module_enabled_channel;
 
-pub fn handle(cfg: &ServerCfg, url: Url, regex_match: bool) -> Result<String> {
+pub fn handle(cfg: &ServerCfg, url: Url, target: &str, regex_match: bool) -> Result<String> {
     let domain = url.domain().unwrap().to_owned();
     let sign = if regex_match { "┗━ " } else { "" };
 
     // Invoke either site specific or generic handler
-    if domain.ends_with("youtube.com") || domain.ends_with("youtu.be") {
+    if module_enabled_channel(cfg, target, "youtube") &&
+        (domain.ends_with("youtube.com") || domain.ends_with("youtu.be"))
+    {
         let path = url.path_segments().unwrap().last().unwrap();
         let mut query = url.query_pairs();
         if path == "watch" || domain.ends_with("youtu.be") {
@@ -124,7 +127,9 @@ pub fn handle(cfg: &ServerCfg, url: Url, regex_match: bool) -> Result<String> {
         } else {
             unimplemented!("{}, {:?}", path, query)
         }
-    } else if domain.ends_with("wolframalpha.com") {
+    } else if module_enabled_channel(cfg, target, "wolframalpha") &&
+        domain.ends_with("wolframalpha.com")
+    {
         let i = url.query_pairs().find(|&(ref k, _)| k == "i").unwrap().1;
         let i = percent_decode(i.as_bytes()).decode_utf8()?;
         let resp = query::query(
@@ -146,14 +151,14 @@ pub fn handle(cfg: &ServerCfg, url: Url, regex_match: bool) -> Result<String> {
         } else {
             Err(ErrorKind::NoExtractableData.into())
         }
-    } else if domain.ends_with("jisho.org") {
+    } else if module_enabled_channel(cfg, target, "jisho") && domain.ends_with("jisho.org") {
         jisho::handle(
             percent_decode(url.path_segments().unwrap().last().unwrap().as_bytes())
                 .decode_utf8()?
                 .borrow(),
             sign,
         )
-    } else if domain.contains(".google.") {
+    } else if module_enabled_channel(cfg, target, "google") && domain.contains(".google.") {
         let body: JValue = reqwest::get(&format!(
             "https://www.googleapis.com/customsearch/v1?num=3&fields=items\
              &cx={}&key={}&q={}",
