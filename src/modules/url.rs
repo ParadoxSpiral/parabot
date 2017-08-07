@@ -38,24 +38,30 @@ use errors::*;
 
 pub fn handle(cfg: &ServerCfg, url: Url, regex_match: bool) -> Result<String> {
     let domain = url.domain().unwrap().to_owned();
+    let sign = if regex_match { "┗━ " } else { "" };
 
     // Invoke either site specific or generic handler
     if domain.ends_with("youtube.com") || domain.ends_with("youtu.be") {
         let path = url.path_segments().unwrap().last().unwrap();
         let mut query = url.query_pairs();
         if path == "watch" || domain.ends_with("youtu.be") {
-            let v = query.find(|&(ref k, _)| k == "v").unwrap().1;
-            let v = percent_decode(v.as_bytes()).decode_utf8()?;
-            let resp: JValue = reqwest::get(&format!(
-                "https://www.googleapis.com/youtube/v3/videos?part=status,snippet,contentDetails,\
-                 statistics&key={}&id={}",
-                cfg.youtube_key.as_ref().unwrap(),
-                if domain.ends_with("youtube.com") {
+            let resp: JValue = if domain.ends_with("youtube.com") {
+                let v = query.find(|&(ref k, _)| k == "v").unwrap().1;
+                let v = percent_decode(v.as_bytes()).decode_utf8()?;
+                reqwest::get(&format!(
+                    "https://www.googleapis.com/youtube/v3/videos?part=status,snippet,\
+                     contentDetails,statistics&key={}&id={}",
+                    cfg.youtube_key.as_ref().unwrap(),
                     v.as_ref()
-                } else {
-                    path
-                }
-            ))?
+                ))
+            } else {
+                reqwest::get(&format!(
+                    "https://www.googleapis.com/youtube/v3/videos?part=status,snippet,\
+                     contentDetails,statistics&key={}&id={}",
+                    cfg.youtube_key.as_ref().unwrap(),
+                    path.split('?').next().unwrap()
+                ))
+            }?
                 .json()?;
             let channel = resp.pointer("/items/0/snippet/channelTitle")
                 .unwrap()
@@ -132,14 +138,11 @@ pub fn handle(cfg: &ServerCfg, url: Url, regex_match: bool) -> Result<String> {
             }),
         )?;
         if let Some(pods) = resp.pods {
-            if regex_match {
-                Ok(format!(
-                    "┗━ {}",
-                    pods[0].subpods[0].plaintext.as_ref().unwrap()
-                ))
-            } else {
-                Ok(pods[0].subpods[0].plaintext.clone().unwrap())
-            }
+            Ok(format!(
+                "{}{}",
+                sign,
+                pods[0].subpods[0].plaintext.as_ref().unwrap()
+            ))
         } else {
             Err(ErrorKind::NoExtractableData.into())
         }
@@ -148,7 +151,7 @@ pub fn handle(cfg: &ServerCfg, url: Url, regex_match: bool) -> Result<String> {
             percent_decode(url.path_segments().unwrap().last().unwrap().as_bytes())
                 .decode_utf8()?
                 .borrow(),
-            regex_match,
+            sign,
         )
     } else if domain.contains(".google.") {
         let body: JValue = reqwest::get(&format!(
@@ -200,7 +203,8 @@ pub fn handle(cfg: &ServerCfg, url: Url, regex_match: bool) -> Result<String> {
 
         match (content_length, content_type) {
             (Some(l), Some(mime)) if mime.0.subtype() != mime::HTML => Ok(format!(
-                "┗━ {}; {}",
+                "{}{}; {}",
+                sign,
                 mime,
                 l.file_size(Options::BINARY).unwrap()
             )),
@@ -232,11 +236,11 @@ pub fn handle(cfg: &ServerCfg, url: Url, regex_match: bool) -> Result<String> {
                         domain.ends_with("github.com")) &&
                         !description.contains(title))
                 {
-                    Ok(format!("┗━ {}", title))
+                    Ok(format!("{}{}", sign, title))
                 } else if description.contains(title) {
-                    Ok(format!("┗━ {}", description))
+                    Ok(format!("{}{}", sign, description))
                 } else {
-                    Ok(format!("┗━ {} - {}", title, description))
+                    Ok(format!("{}{} - {}", sign, title, description))
                 }
             }
             _ => Err(ErrorKind::NoExtractableData.into()),
@@ -351,18 +355,14 @@ mod jisho {
         pub parts_of_speech: Vec<String>,
     }
 
-    pub fn handle(input: &str, regex_match: bool) -> Result<String> {
+    pub fn handle(input: &str, sign: &str) -> Result<String> {
         let resp: ApiResponse = reqwest::get(
             &(API_BASE.to_owned() + &percent_decode(input.as_bytes()).decode_utf8()?),
         )?
             .json()?;
         let resp = resp.data;
 
-        let mut ret = if regex_match {
-            String::from("┗━ ")
-        } else {
-            String::new()
-        };
+        let mut ret = String::from(sign);
 
         for (n, dp) in resp.iter().take(3).enumerate() {
             if n == 0 {

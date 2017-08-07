@@ -160,7 +160,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                             log,
                             msg.source_nickname().unwrap(),
                             &reply,
-                        )?
+                        )?;
                     }
                 } else if &content[1..] == "exit" || &content[1..] == "quit" ||
                     &content[1..] == "part"
