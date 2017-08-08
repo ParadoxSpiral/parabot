@@ -24,29 +24,30 @@ authors = ["ParadoxSpiral <ParadoxSpiral@riseup.net>"]
 [dependencies]
 chrono = "0.4"
 chrono-tz = "0.4"
-crossbeam = "0.2"
+crossbeam = "0.3"
 ddg = "0.4"
-diesel = { version = "0.14", features = ["sqlite"] }
-diesel_codegen = { version = "0.14", features = ["sqlite"] }
+diesel = { version = "0.15", features = ["sqlite"] }
+diesel_codegen = { version = "0.15", features = ["sqlite"] }
+dotenv = "0.10"
 encoding = "0.2"
 error-chain = "0.10"
 html5ever = "0.18"
-humansize = "1.0"
+humansize = "1"
 irc = "0.12"
 lazy_static = "0.2"
 parking_lot = {version = "0.4", features = ["nightly"]}
-percent-encoding = "1.0"
+percent-encoding = "1"
 regex = "0.2"
 reqwest = "0.7"
-serde = "1.0"
-serde_derive = "1.0"
-serde_json = "1.0"
-slog = { version = "2.0", features = ["max_level_trace", "release_max_level_info"] }
-slog-async = "2.0"
-slog-term = "2.0"
-threadpool = "1.3"
+serde = "1"
+serde_derive = "1"
+serde_json = "1"
+slog = { version = "2", features = ["max_level_trace", "release_max_level_info"] }
+slog-async = "2"
+slog-term = "2"
+threadpool = "1"
 toml = "0.4"
-unicode-segmentation = "1.2"
+unicode-segmentation = "1"
 urlshortener = "0.7"
 
 [dependencies.wolfram_alpha]
@@ -55,7 +56,7 @@ version = "0.4"
 
 [dependencies.forecast]
 git = "https://github.com/ParadoxSpiral/forecast-rs"
-version = "1.0"
+version = "1"
 
 [features]
 default = ["show_description"]

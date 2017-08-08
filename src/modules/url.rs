@@ -26,7 +26,7 @@ use reqwest;
 use reqwest::{Client, Url};
 use reqwest::header::{ContentLength, ContentType, Headers};
 use reqwest::mime;
-use serde_json::Value as JValue;
+use serde_json::Value;
 use urlshortener::{Provider, UrlShortener};
 use wolfram_alpha::query;
 
@@ -48,7 +48,7 @@ pub fn handle(cfg: &ServerCfg, url: Url, target: &str, regex_match: bool) -> Res
         let path = url.path_segments().unwrap().last().unwrap();
         let mut query = url.query_pairs();
         if path == "watch" || domain.ends_with("youtu.be") {
-            let resp: JValue = if domain.ends_with("youtube.com") {
+            let resp: Value = if domain.ends_with("youtube.com") {
                 let v = query.find(|&(ref k, _)| k == "v").unwrap().1;
                 let v = percent_decode(v.as_bytes()).decode_utf8()?;
                 reqwest::get(&format!(
@@ -159,7 +159,7 @@ pub fn handle(cfg: &ServerCfg, url: Url, target: &str, regex_match: bool) -> Res
             sign,
         )
     } else if module_enabled_channel(cfg, target, "google") && domain.contains(".google.") {
-        let body: JValue = reqwest::get(&format!(
+        let body: Value = reqwest::get(&format!(
             "https://www.googleapis.com/customsearch/v1?num=3&fields=items\
              &cx={}&key={}&q={}",
             cfg.google_search_id.as_ref().unwrap(),
@@ -188,7 +188,7 @@ pub fn handle(cfg: &ServerCfg, url: Url, target: &str, regex_match: bool) -> Res
                 n + 1,
                 UrlShortener::new()?.try_generate(
                     url,
-                    Some(vec![Provider::IsGd, Provider::VGd, Provider::HmmRs])
+                    Some(&[Provider::IsGd, Provider::VGd, Provider::HmmRs])
                 )?,
                 item.pointer("/snippet")
                     .unwrap()
