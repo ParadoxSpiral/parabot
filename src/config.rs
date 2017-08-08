@@ -116,53 +116,45 @@ pub fn parse_config(input: &str) -> Result<Config> {
                 .iter()
                 .any(|c| c.modules.iter().any(|m| m == "weather"))
         {
-            return Err(format!(
+            bail!(
                 "Weather module enabled on {:?}, but no weather API secret or geocoding key given",
                 &srv.address
-            ).into());
+            );
         } else if srv.wolframalpha_appid.is_none() &&
             srv.channels
                 .iter()
                 .any(|c| c.modules.iter().any(|m| m == "wolframaplha"))
         {
-            return Err(
-                format!(
-                    "Wolframalpha module enabled on {:?}, but no appid given",
-                    &srv.address
-                ).into(),
+            bail!(
+                "Wolframalpha module enabled on {:?}, but no appid given",
+                &srv.address
             );
         } else if srv.youtube_key.is_none() &&
             srv.channels
                 .iter()
                 .any(|c| c.modules.iter().any(|m| m == "youtube"))
         {
-            return Err(
-                format!(
-                    "Youtube module enabled on {:?}, but no key given",
-                    &srv.address
-                ).into(),
+            bail!(
+                "Youtube module enabled on {:?}, but no key given",
+                &srv.address
             );
         } else if srv.wormy_nick.is_none() &&
             srv.channels
                 .iter()
                 .any(|c| c.modules.iter().any(|m| m == "wormy"))
         {
-            return Err(
-                format!(
-                    "Wormy module enabled on {:?}, but no nick given",
-                    &srv.address
-                ).into(),
+            bail!(
+                "Wormy module enabled on {:?}, but no nick given",
+                &srv.address
             );
         } else if (srv.google_search_id.is_none() || srv.google_search_key.is_none()) &&
             srv.channels
                 .iter()
                 .any(|c| c.modules.iter().any(|m| m == "google"))
         {
-            return Err(
-                format!(
-                    "Google module enabled on {:?}, but no search id given",
-                    &srv.address
-                ).into(),
+            bail!(
+                "Google module enabled on {:?}, but no search id given",
+                &srv.address
             );
         }
     }

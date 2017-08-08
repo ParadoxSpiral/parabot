@@ -186,10 +186,8 @@ pub fn handle(cfg: &ServerCfg, url: Url, target: &str, regex_match: bool) -> Res
             formatted.push_str(&format!(
                 "\x02{}\x02: {} [{}]{}",
                 n + 1,
-                UrlShortener::new()?.try_generate(
-                    url,
-                    Some(&[Provider::IsGd, Provider::VGd, Provider::HmmRs])
-                )?,
+                UrlShortener::new()?
+                    .try_generate(url, Some(&[Provider::IsGd, Provider::VGd, Provider::HmmRs]))?,
                 item.pointer("/snippet")
                     .unwrap()
                     .as_str()

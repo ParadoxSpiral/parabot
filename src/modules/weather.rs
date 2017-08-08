@@ -58,20 +58,14 @@ pub fn init(cfg: &Config, log: &Logger) -> Result<()> {
     let mut lc = LOCATION_CACHE.write();
     let mut gc = GEOCODING_CACHE.write();
     for srv in &cfg.servers {
-        let conn = super::establish_database_connection(srv, log)?;
-        let locations = lc_dsl::location_cache
-            .filter(lc_dsl::server.eq(&srv.address))
-            .load::<models::Location>(&conn)
-            .or_else(|err| {
-                crit!(log, "Failed to load location cache: {:?}", err);
-                Err(err)
-            })?;
-        let geocodes = gc_dsl::geocode_cache
-            .load::<models::Geocode>(&conn)
-            .or_else(|err| {
-                crit!(log, "Failed to load geocode tells: {:?}", err);
-                Err(err)
-            })?;
+        let (locations, geocodes) = super::with_database(srv, |db| {
+            Ok((
+                lc_dsl::location_cache
+                    .filter(lc_dsl::server.eq(&srv.address))
+                    .load::<models::Location>(db)?,
+                gc_dsl::geocode_cache.load::<models::Geocode>(db)?,
+            ))
+        })?;
 
         info!(log, "Location cache: {:?}", &locations);
         for q in locations {
@@ -97,7 +91,6 @@ pub fn handle(
     msg: &str,
     nick: &str,
 ) -> Result<String> {
-    let mut conn = None;
     let (range, hours, days, location) = {
         // Use last location
         if msg.is_empty() {
@@ -180,17 +173,15 @@ pub fn handle(
                                     new_loc.clone());
                                 drop(cache);
 
-                                conn = Some(super::establish_database_connection(cfg, log)?);
-                                diesel::update(
-                                    lc_dsl::location_cache
-                                        .filter(lc_dsl::server.eq(&cfg.address))
-                                        .filter(lc_dsl::nick.eq(nick)),
-                                ).set(lc_dsl::location.eq(new_loc.clone()))
-                                    .execute(conn.as_ref().unwrap())
-                                    .or_else(|err| {
-                                        crit!(log, "Failed to update weather table: {:?}", err);
-                                        Err(err)
-                                    })?;
+                                super::with_database(cfg, |db| {
+                                    diesel::update(
+                                        lc_dsl::location_cache
+                                            .filter(lc_dsl::server.eq(&cfg.address))
+                                            .filter(lc_dsl::nick.eq(nick)),
+                                    ).set(lc_dsl::location.eq(new_loc.clone()))
+                                        .execute(db)?;
+                                    Ok(())
+                                })?;
                             } else {
                                 trace!(log, "No location update needed")
                             }
@@ -199,19 +190,17 @@ pub fn handle(
                             cache.insert((cfg.address.clone(), nick.to_owned()), new_loc.clone());
                             drop(cache);
 
-                            conn = Some(super::establish_database_connection(cfg, log)?);
                             let new = models::NewLocation {
                                 server: &cfg.address,
                                 nick: nick,
                                 location: &*new_loc,
                             };
-                            diesel::insert(&new)
-                                .into(schema::location_cache::table)
-                                .execute(conn.as_ref().unwrap())
-                                .or_else(|err| {
-                                    crit!(log, "Failed to update weather table: {:?}", err);
-                                    Err(err)
-                                })?;
+                            super::with_database(cfg, |db| {
+                                diesel::insert(&new)
+                                    .into(schema::location_cache::table)
+                                    .execute(db)?;
+                                Ok(())
+                            })?;
                         }
                         new_loc
                     }
@@ -257,16 +246,9 @@ pub fn handle(
                 location
             ))?
             .header(AcceptEncoding(vec![qitem(Encoding::Gzip)]))
-            .send()
-            .or_else(|err| {
-                crit!(log, "Failed to query geocoding API: {}", err);
-                Err(err)
-            })?;
+            .send()?;
         if !res.status().is_success() {
-            crit!(log, "Failed to query geocoding API: {}", res.status());
-            return Err(
-                format!("Failed to query geocoding API: {}", res.status()).into(),
-            );
+            bail!("Failed to query geocoding API: {}", res.status());
         }
 
         drop(cache);
@@ -289,8 +271,8 @@ pub fn handle(
                     .to_owned(),
             );
         } else if status != 0 {
-            crit!(log, "Geocoding request failed: {:?}", messages);
-            return Err(format!("Geocoding request failed: {:?}", messages).into());
+            crit!(log, "Geocoding request failed");
+            bail!("Geocoding request failed: {:?}", messages);
         }
         let lat = json.pointer("/results/0/locations/0/latLng/lat")
             .unwrap()
@@ -306,16 +288,6 @@ pub fn handle(
             .as_str()
             .unwrap();
         trace!(log, "Geocode quality: {}", quality);
-        match &quality[2..] {
-            "CCC" | "XCC" | "CXC" | "CCX" | "XXC" | "CXX" | "XXX" => {
-                return Ok(format!(
-                    "The location does not provide enough information to resolve to \
-                     coordinates with satisfactory precision ({}).",
-                    quality
-                ));
-            }
-            _ => {}
-        }
 
         // Reverse geocode lookup to get location to reply with
         let mut res = reqwest_client
@@ -327,20 +299,9 @@ pub fn handle(
                 lng
             ))?
             .header(AcceptEncoding(vec![qitem(Encoding::Gzip)]))
-            .send()
-            .or_else(|err| {
-                crit!(log, "Failed to query reverse geocoding API: {}", err);
-                Err(err)
-            })?;
+            .send()?;
         if !res.status().is_success() {
-            crit!(
-                log,
-                "Failed to query reverse geocoding API: {}",
-                res.status()
-            );
-            return Err(
-                format!("Failed to query geocoding API: {}", res.status()).into(),
-            );
+            bail!("Failed to query geocoding API: {}", res.status())
         };
 
         let mut body = String::new();
@@ -360,10 +321,7 @@ pub fn handle(
                     .to_owned(),
             );
         } else if status != 0 {
-            crit!(log, "Geocoding request failed: {:?}", messages);
-            return Err(
-                format!("Reverse geocoding request failed: {:?}", messages).into(),
-            );
+            bail!("Reverse geocoding request failed: {:?}", messages);
         }
         let city = json.pointer("/results/0/locations/0/adminArea5")
             .unwrap()
@@ -396,24 +354,18 @@ pub fn handle(
             .write()
             .insert(location.to_lowercase().to_owned(), (lat, lng, revl.clone()));
 
-        let conn = if let Some(conn) = conn {
-            conn
-        } else {
-            super::establish_database_connection(cfg, log)?
-        };
         let new = models::NewGeocode {
             location: &location.to_lowercase(),
             latitude: lat,
             longitude: lng,
             reverse_location: &revl.clone(),
         };
-        diesel::insert(&new)
-            .into(schema::geocode_cache::table)
-            .execute(&conn)
-            .or_else(|err| {
-                crit!(log, "Failed to insert into weather table: {:?}", err);
-                Err(err)
-            })?;
+        super::with_database(cfg, |db| {
+            diesel::insert(&new)
+                .into(schema::geocode_cache::table)
+                .execute(db)?;
+            Ok(())
+        })?;
 
         trace!(log, "Got geocode from API: lat: {}; lng: {}", lat, lng);
         latitude = lat;
@@ -440,15 +392,9 @@ pub fn handle(
     } else if days || hours {
         builder = builder.exclude_block(ExcludeBlock::Currently);
     }
-    let mut res = api_client.get_forecast(builder.build()).or_else(|err| {
-        crit!(log, "Failed to query weather API: {}", err);
-        Err(err)
-    })?;
+    let mut res = api_client.get_forecast(builder.build())?;
     if !res.status().is_success() {
-        crit!(log, "Failed to query weather API: {}", res.status());
-        return Err(
-            format!("Failed to query weather API: {}", res.status()).into(),
-        );
+        bail!("Failed to query weather API");
     }
 
     let api_calls = ::std::str::from_utf8(

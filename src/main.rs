@@ -63,6 +63,8 @@ use std::fs::File;
 use std::io::Read;
 use std::sync::Arc;
 
+use errors::*;
+
 mod config;
 pub mod models;
 mod modules;
@@ -103,30 +105,28 @@ lazy_static!{
     };
 }
 
+// Allows slog-async to print log msgs, when errored in main, before panic
+fn wait_err<T, I: Into<Error>>(res: ::std::result::Result<T, I>) -> T {
+    match res {
+        Ok(v) => v,
+        Err(e) => {
+            crit!(SLOG_ROOT, "{:?}", e.into());
+            ::std::thread::sleep(::std::time::Duration::from_millis(250));
+            panic!("")
+        }
+    }
+}
+
 fn main() {
     // Read and parse config file
-    let cfg_path = env::args().nth(1).or_else(|| {
-        warn!(
-            SLOG_ROOT,
-            "No config file specified, using ./example_conf.toml"
-        );
-        Some("./example_conf.toml".into())
-    });
-
     let mut cfg = String::new();
-    let file = File::open(cfg_path.unwrap()).or_else(|e| {
-        crit!(SLOG_ROOT, "Failed to open config file: {}", e);
-        Err(e)
-    });
-    file.unwrap()
-        .read_to_string(&mut cfg)
-        .or_else(|e| {
-            crit!(SLOG_ROOT, "Failed to read config file: {}", e);
-            Err(e)
-        })
-        .unwrap();
+    wait_err(
+        wait_err(File::open(
+            env::args().nth(1).expect("No config file given"),
+        )).read_to_string(&mut cfg),
+    );
 
-    let config = config::parse_config(&cfg).unwrap();
+    let config = wait_err(config::parse_config(&cfg));
 
     // Spawn two threads per channel, incase modules lag on e.g. IO
     // TODO: Needs testing if this scales/is even necessary
@@ -142,20 +142,24 @@ fn main() {
         threads / 2
     );
 
-    // Init modules that require init
-    modules::init(&config, &SLOG_ROOT).unwrap();
+    // Init modules
+    wait_err(modules::init(&config, &SLOG_ROOT));
 
     // Init state of each server
     let mut state = Vec::with_capacity(config.servers.len());
     for cfg in config.servers {
-        // Avoid premature move of cfg into first tuple elem
-        let srv = Arc::new(cfg.new_ircserver().unwrap());
-        let log = Arc::new(SLOG_ROOT.new(o!(
+        let log = Arc::new(SLOG_ROOT.new(
+            o!(
                             "Server" => format!("{} on {}:{}", cfg.nickname, cfg.address, cfg.port),
-			    			"Channels" => format!("{:?}", cfg.channels))));
-        state.push((Arc::new(cfg), srv, log));
+                            "Channels" => format!("{:?}", cfg.channels)),
+        ));
+        state.push((
+            Arc::new(wait_err(cfg.new_ircserver())),
+            Arc::new(cfg),
+            log,
+        ));
     }
-    crossbeam::scope(move |scope| for &(ref cfg, ref srv, ref log) in &state {
+    crossbeam::scope(move |scope| for &(ref srv, ref cfg, ref log) in &state {
         // TODO: Is there a way to do less cloning?
         let pool = pool.clone();
         let cfg = cfg.clone();
@@ -163,17 +167,23 @@ fn main() {
         let srv2 = srv.clone();
         let log = log.clone();
         scope.spawn(move || {
-            // Handle registration etc, TODO: log errors
-            srv1.identify().unwrap();
-            srv1.send_mode(&cfg.nickname, &[Mode::Plus(UserMode::Invisible, None)])
-                .unwrap();
+            // Handle registration etc
+            wait_err(srv1.identify());
+            wait_err(srv1.send_mode(
+                &cfg.nickname,
+                &[Mode::Plus(UserMode::Invisible, None)],
+            ));
             // Listen for, and handle, messages
-            srv1.for_each_incoming(|msg| {
+            wait_err(srv1.for_each_incoming(|msg| {
                 let cfg = cfg.clone();
                 let srv = srv2.clone();
                 let log = log.clone();
-                pool.execute(move || modules::handle(&cfg, &srv, &log, &msg).unwrap());
-            }).unwrap();
+                pool.execute(move || {
+                    if let Err(e) = modules::handle(&cfg, &srv, &log, &msg) {
+                        crit!(&*log, "{:?}", e);
+                    }
+                });
+            }));
         });
     });
 }

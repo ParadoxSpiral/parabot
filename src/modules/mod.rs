@@ -15,10 +15,11 @@
 // You should have received a copy of the GNU General Public License
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
+use diesel::result;
 use diesel::Connection;
 use diesel::sqlite::SqliteConnection;
 use irc::client::prelude::*;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use regex::Regex;
 use reqwest::Url;
 use slog::Logger;
@@ -182,19 +183,19 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                 {
                     trace!(log, "Starting .tell");
                     let reply = tell::add(cfg, log, msg, private)?;
+                    send_segmented_message(cfg, srv, log, reply_target, &reply)?;
                     if module_enabled_channel(cfg, &*target, "wormy") {
                         LAST_MESSAGE.store(true, Ordering::Release);
                     }
-                    send_segmented_message(cfg, srv, log, reply_target, &reply)?;
                 } else if (private || module_enabled_channel(cfg, &*target, "duckduckgo")) &&
                     content[1..].starts_with("ddg")
                 {
                     trace!(log, "Starting .ddg");
                     let reply = ddg::handle(cfg, content[4..].trim(), &*target)?;
+                    send_segmented_message(cfg, srv, log, reply_target, &reply)?;
                     if module_enabled_channel(cfg, &*target, "wormy") {
                         LAST_MESSAGE.store(true, Ordering::Release);
                     }
-                    send_segmented_message(cfg, srv, log, reply_target, &reply)?;
                 } else if (private || module_enabled_channel(cfg, &*target, "google")) &&
                     content[1..].starts_with('g')
                 {
@@ -208,10 +209,10 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                         &*target,
                         false,
                     )?;
+                    send_segmented_message(cfg, srv, log, reply_target, &reply)?;
                     if module_enabled_channel(cfg, &*target, "wormy") {
                         LAST_MESSAGE.store(true, Ordering::Release);
                     }
-                    send_segmented_message(cfg, srv, log, reply_target, &reply)?;
                 } else if (private || module_enabled_channel(cfg, &*target, "wolframalpha")) &&
                     content[1..].starts_with("wa")
                 {
@@ -225,10 +226,10 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                         &*target,
                         false,
                     )?;
+                    send_segmented_message(cfg, srv, log, reply_target, &reply)?;
                     if module_enabled_channel(cfg, &*target, "wormy") {
                         LAST_MESSAGE.store(true, Ordering::Release);
                     }
-                    send_segmented_message(cfg, srv, log, reply_target, &reply)?;
                 } else if (private || module_enabled_channel(cfg, &*target, "jisho")) &&
                     content[1..].starts_with("jisho")
                 {
@@ -241,26 +242,25 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                         &*target,
                         false,
                     )?;
+                    send_segmented_message(cfg, srv, log, reply_target, &reply)?;
                     if module_enabled_channel(cfg, &*target, "wormy") {
                         LAST_MESSAGE.store(true, Ordering::Release);
                     }
-                    send_segmented_message(cfg, srv, log, reply_target, &reply)?;
                 } else if (private || module_enabled_channel(cfg, &*target, "weather")) &&
                     content[1..].starts_with("weather")
                 {
                     trace!(log, "Starting .weather");
                     let nick = msg.source_nickname().unwrap();
                     let reply = weather::handle(cfg, srv, log, &content[8..], nick)?;
+                    send_segmented_message(cfg, srv, log, reply_target, &reply)?;
                     if module_enabled_channel(cfg, &*target, "wormy") {
                         LAST_MESSAGE.store(true, Ordering::Release);
                     }
-                    send_segmented_message(cfg, srv, log, reply_target, &reply)?;
                 } else {
                     warn!(log, "Unknown command {}", &content[1..]);
                 }
             } else if private || module_enabled_channel(cfg, &*target, "url-info") {
                 lazy_static! (
-                    // FIXME: This disallows > in urls
                     static ref URL_REGEX: Regex = Regex::new("\
                         .*?\
                         (?:\
@@ -272,9 +272,11 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                         .*?").unwrap();
                 );
                 for cap in URL_REGEX.captures_iter(content) {
-                    let _ = Url::parse(cap.name("url").unwrap().as_str()).map(|url| {
-                        trace!(log, "URL match: {:?}", url);
+                    let url = Url::parse(cap.name("url").unwrap().as_str())?;
+                    trace!(log, "URL match: {:?}", url);
 
+                    // Instead of returning on error, "catch" it to process as many urls as possible
+                    let ghetto_catch = || -> Result<()> {
                         if private || !cfg.channels.iter().any(|c| {
                             let domain = url.domain().unwrap();
                             *c.name == *target &&
@@ -284,14 +286,16 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                         }) {
                             let reply_target = msg.response_target().unwrap();
                             let reply = url::handle(cfg, url, &*target, true)?;
+                            send_segmented_message(cfg, srv, log, reply_target, &reply)?;
                             if module_enabled_channel(cfg, &*target, "wormy") {
                                 LAST_MESSAGE.store(true, Ordering::Release);
                             }
-                            send_segmented_message(cfg, srv, log, reply_target, &reply)
-                        } else {
-                            Ok(())
                         }
-                    });
+                        Ok(())
+                    };
+                    if let Err(e) = ghetto_catch() {
+                        crit!(log, "{:?}", e);
+                    }
                 }
             }
         }
@@ -306,6 +310,52 @@ fn module_enabled_channel(cfg: &ServerCfg, target: &str, module: &str) -> bool {
     cfg.channels.iter().any(|c| {
         c.name == target && c.modules.iter().any(|m| m == module)
     })
+}
+
+fn with_database<T, F>(cfg: &ServerCfg, mut fun: F) -> Result<T>
+where
+    F: FnMut(&SqliteConnection) -> Result<T>,
+{
+    lazy_static!(
+        static ref DATABASE_CONNS: RwLock<HashMap<String, Mutex<SqliteConnection>>> = 
+            RwLock::new(HashMap::new());
+    );
+
+    let establish_conn = || -> Result<Mutex<SqliteConnection>> {
+        SqliteConnection::establish(&cfg.database)
+            .map(Mutex::new)
+            .map_err(|err| ErrorKind::DieselConn(err).into())
+    };
+
+    let mut guard = (*DATABASE_CONNS).write();
+    if !guard.contains_key(&cfg.address) {
+        guard.insert(cfg.address.clone(), establish_conn()?);
+    }
+    let guard = guard.downgrade();
+    let res = fun(&guard.get(&cfg.address).unwrap().lock());
+    if let Err(e) = res {
+        // TODO(TEST): Are these the only errors when the db conn dcs/errs?
+        match *e.kind() {
+            ErrorKind::Diesel(
+                result::Error::DatabaseError(result::DatabaseErrorKind::UnableToSendCommand, _),
+            ) |
+            ErrorKind::Diesel(
+                result::Error::DatabaseError(result::DatabaseErrorKind::__Unknown, _),
+            ) => {
+                drop(guard);
+                let mut guard = (*DATABASE_CONNS).write();
+                guard.remove(&cfg.address);
+                guard.insert(cfg.address.clone(), establish_conn()?);
+                let guard = guard.downgrade();
+                // FIXME: Why is the local var required?…
+                let r = fun(&guard.get(&cfg.address).unwrap().lock());
+                r
+            }
+            _ => Err(e),
+        }
+    } else {
+        res
+    }
 }
 
 fn send_segmented_message(
@@ -502,25 +552,4 @@ fn send_segmented_message(
         }
     }
     Ok(())
-}
-
-fn establish_database_connection(cfg: &ServerCfg, log: &Logger) -> Result<SqliteConnection> {
-    SqliteConnection::establish(&cfg.database)
-        .or_else(|err| {
-            crit!(
-                log,
-                "Failed to connect to database {}: {}",
-                cfg.database,
-                err
-            );
-            Err(ErrorKind::DieselConn(err).into())
-        })
-        .and_then(|db| {
-            trace!(
-                log,
-                "Successfully established connection to {}",
-                cfg.database
-            );
-            Ok(db)
-        })
 }

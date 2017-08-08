@@ -40,10 +40,12 @@ lazy_static!{
 pub fn init(cfg: &Config, log: &Logger) -> Result<()> {
     let mut hm = PENDING_TELLS.lock();
     for srv in &cfg.servers {
-        let conn = super::establish_database_connection(srv, log)?;
-        let tells = dsl::pending_tells
-            .filter(dsl::server_addr.eq(&srv.address))
-            .load::<models::PendingTell>(&conn)?;
+        let tells = super::with_database(srv, |db| {
+            Ok(dsl::pending_tells
+                .filter(dsl::server_addr.eq(&srv.address))
+                .load::<models::PendingTell>(db)?)
+        })?;
+
         info!(log, "Pending tells: {:?}", &tells);
         hm.insert(srv.address.clone(), Mutex::new(tells.len()));
         hm.shrink_to_fit();
@@ -63,37 +65,34 @@ pub fn handle_user_join(
         if let Command::JOIN(ref chan, ..) = msg.command {
             let target_nick = msg.source_nickname().unwrap();
 
-            let conn = super::establish_database_connection(cfg, log)?;
-            let tells = dsl::pending_tells
-                .filter(dsl::server_addr.eq(&cfg.address))
-                .filter(dsl::target_nick.eq(&target_nick))
-                .filter(dsl::channel.eq(&*chan).or(dsl::channel.is_null()))
-                .load::<models::PendingTell>(&conn)
-                .or_else(|err| {
-                    crit!(log, "Failed to load pending tells: {:?}", err);
-                    Err(err)
-                })?;
+            let tells = super::with_database(cfg, |db| {
+                Ok(dsl::pending_tells
+                    .filter(dsl::server_addr.eq(&cfg.address))
+                    .filter(dsl::target_nick.eq(&target_nick))
+                    .filter(dsl::channel.eq(&*chan).or(dsl::channel.is_null()))
+                    .load::<models::PendingTell>(db)?)
+            })?;
 
             *pending -= 1;
             drop(pending);
             debug!(log, "Found pending tells: {:?}", tells);
 
-            diesel::delete(
-                dsl::pending_tells
-                    .filter(dsl::server_addr.eq(&cfg.address))
-                    .filter(dsl::target_nick.eq(&target_nick))
-                    .filter(dsl::channel.eq(&*chan).or(dsl::channel.is_null())),
-            ).execute(&conn)
-                .or_else(|err| {
-                    crit!(log, "Failed to delete tells: {:?}", err);
-                    srv.send_privmsg(
-                        target_nick,
-                        "You have some pending tells, but I failed. \
-                         Try rejoining, or notifying my owner.",
-                    )?;
-
-                    Err(ErrorKind::Diesel(err).into())
-                })
+            super::with_database(cfg, |db| {
+                diesel::delete(
+                    dsl::pending_tells
+                        .filter(dsl::server_addr.eq(&cfg.address))
+                        .filter(dsl::target_nick.eq(&target_nick))
+                        .filter(dsl::channel.eq(&*chan).or(dsl::channel.is_null())),
+                ).execute(db)?;
+                Ok(())
+            }).or_else(|err| {
+                srv.send_privmsg(
+                    target_nick,
+                    "You have some pending tells, but I failed. \
+                     Try rejoining, or notifying my owner.",
+                )?;
+                Err(err)
+            })
                 .and_then(|_| send_tells(cfg, srv, log, &tells))
         } else {
             unreachable!()
@@ -128,37 +127,35 @@ pub fn handle_names_reply(
                 })
                 .collect::<Vec<_>>();
 
-            let conn = super::establish_database_connection(cfg, log)?;
-            let tells = dsl::pending_tells
-                .filter(dsl::server_addr.eq(&cfg.address))
-                .filter(dsl::target_nick.eq_any(&target_nicks))
-                .filter(dsl::channel.eq(&*chan).or(dsl::channel.is_null()))
-                .load::<models::PendingTell>(&conn)
-                .or_else(|err| {
-                    crit!(log, "Failed to load pending tells: {:?}", err);
-                    Err(err)
-                })?;
+            let tells = super::with_database(cfg, |db| {
+                Ok(dsl::pending_tells
+                    .filter(dsl::server_addr.eq(&cfg.address))
+                    .filter(dsl::target_nick.eq_any(&target_nicks))
+                    .filter(dsl::channel.eq(&*chan).or(dsl::channel.is_null()))
+                    .load::<models::PendingTell>(db)?)
+            })?;
             *pending -= tells.len();
             drop(pending);
             debug!(log, "Found pending tells: {:?}", tells);
 
-            diesel::delete(
-                dsl::pending_tells
-                    .filter(dsl::server_addr.eq(&cfg.address))
-                    .filter(dsl::target_nick.eq_any(&target_nicks))
-                    .filter(dsl::channel.eq(&*chan).or(dsl::channel.is_null())),
-            ).execute(&conn)
-                .or_else(|err| {
-                    for target_nick in target_nicks {
-                        crit!(log, "Failed to delete tells: {:?}", err);
-                        srv.send_privmsg(
-                            &target_nick,
-                            "You have some pending tells, but I failed. \
-                             Try rejoining, or notifying my owner.",
-                        )?;
-                    }
-                    Err(ErrorKind::Diesel(err).into())
-                })
+            super::with_database(cfg, |db| {
+                diesel::delete(
+                    dsl::pending_tells
+                        .filter(dsl::server_addr.eq(&cfg.address))
+                        .filter(dsl::target_nick.eq_any(&target_nicks))
+                        .filter(dsl::channel.eq(&*chan).or(dsl::channel.is_null())),
+                ).execute(db)?;
+                Ok(())
+            }).or_else(|err| {
+                for target_nick in target_nicks {
+                    srv.send_privmsg(
+                        &target_nick,
+                        "You have some pending tells, but I failed. \
+                         Try rejoining, or notifying my owner.",
+                    )?;
+                }
+                Err(err)
+            })
                 .and_then(|_| send_tells(cfg, srv, log, &tells))
         } else {
             unreachable!()
@@ -213,33 +210,25 @@ pub fn add(cfg: &ServerCfg, log: &Logger, msg: &Message, private: bool) -> Resul
             channel: { if private { None } else { Some(target) } },
             source_nick: source_nick,
             target_nick: target_nick,
-            message: target_msg,
+            message: target_msg.trim(),
         };
 
-        let conn = super::establish_database_connection(cfg, log)?;
-        diesel::insert(&pending_tell)
-            .into(schema::pending_tells::table)
-            .execute(&conn)
-            .or_else(|err| {
-                crit!(
-                    log,
-                    "Failed to insert {:?} into {}",
-                    pending_tell,
-                    cfg.database
-                );
-                Err(ErrorKind::Diesel(err).into())
-            })
-            .and_then(|_| {
-                let mut hm = PENDING_TELLS.lock();
-                *hm.get_mut(&cfg.address).unwrap().lock() += 1;
+        super::with_database(cfg, |db| {
+            diesel::insert(&pending_tell)
+                .into(schema::pending_tells::table)
+                .execute(db)?;
+            Ok(())
+        }).and_then(|_| {
+            let mut hm = PENDING_TELLS.lock();
+            *hm.get_mut(&cfg.address).unwrap().lock() += 1;
 
-                Ok(format!(
-                    "{}: I will tell {}: {}",
-                    source_nick,
-                    target_nick,
-                    target_msg
-                ))
-            })
+            Ok(format!(
+                "{}: I will tell {}: {}",
+                source_nick,
+                target_nick,
+                target_msg.trim()
+            ))
+        })
 
     } else {
         unreachable!()
