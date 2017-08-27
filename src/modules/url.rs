@@ -256,7 +256,7 @@ fn pretty_number(num: &str) -> String {
     let mut ret = String::with_capacity(len + len / 3);
     for (n, e) in num.chars().rev().enumerate() {
         ret.insert(0, e);
-        if (n + 1) % 3 == 0 && n != 0 {
+        if (n + 1) % 3 == 0 && n != 0 && n + 1 != len {
             ret.insert(0, ',');
         }
     }
