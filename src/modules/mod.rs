@@ -312,9 +312,9 @@ fn module_enabled_channel(cfg: &ServerCfg, target: &str, module: &str) -> bool {
     })
 }
 
-fn with_database<T, F>(cfg: &ServerCfg, mut fun: F) -> Result<T>
+fn with_database<T, F>(cfg: &ServerCfg, fun: F) -> Result<T>
 where
-    F: FnMut(&SqliteConnection) -> Result<T>,
+    F: Fn(&SqliteConnection) -> Result<T>,
 {
     lazy_static!(
         static ref DATABASE_CONNS: RwLock<HashMap<String, Mutex<SqliteConnection>>> = 
