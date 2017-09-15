@@ -26,12 +26,12 @@ chrono = "0.4"
 chrono-tz = "0.4"
 crossbeam = "0.3"
 ddg = "0.4"
-diesel = { version = "0.15", features = ["sqlite"] }
-diesel_codegen = { version = "0.15", features = ["sqlite"] }
+diesel = { version = "0.16", features = ["sqlite"] }
+diesel_codegen = { version = "0.16", features = ["sqlite"] }
 dotenv = "0.10"
 encoding = "0.2"
-error-chain = "0.10"
-html5ever = "0.18"
+error-chain = "0.11"
+html5ever = "0.20"
 humansize = "1"
 irc = "0.12"
 lazy_static = "0.2"
