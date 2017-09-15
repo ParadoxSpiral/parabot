@@ -124,6 +124,7 @@ pub fn handle_names_reply(
                         .replace('~', "")
                         .replace('@', "")
                         .replace('+', "")
+                        .replace('&', "")
                 })
                 .collect::<Vec<_>>();
 

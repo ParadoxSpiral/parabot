@@ -159,6 +159,9 @@ pub fn handle(cfg: &ServerCfg, url: Url, target: &str, regex_match: bool) -> Res
             sign,
         )
     } else if module_enabled_channel(cfg, target, "google") && domain.contains(".google.") {
+        if url.path_segments().unwrap().last().unwrap() != "search" {
+            return Err(ErrorKind::NoExtractableData.into());
+        }
         let body: Value = reqwest::get(&format!(
             "https://www.googleapis.com/customsearch/v1?num=3&fields=items\
              &cx={}&key={}&q={}",
@@ -225,8 +228,6 @@ pub fn handle(cfg: &ServerCfg, url: Url, target: &str, regex_match: bool) -> Res
                         .read_from(&mut Cursor::new(body))?)
                 })?;
 
-                let show_description = cfg!(feature = "show_description");
-
                 let mut title = String::new();
                 let mut description = String::new();
                 walk_for_metadata(dom.document, &mut title, &mut description);
@@ -234,7 +235,7 @@ pub fn handle(cfg: &ServerCfg, url: Url, target: &str, regex_match: bool) -> Res
                 let description = description.trim();
                 if title.is_empty() {
                     Err(ErrorKind::NoExtractableData.into())
-                } else if !show_description ||
+                } else if !cfg!(feature = "show_description") ||
                     ((description.is_empty() || domain.ends_with("imgur.com") ||
                         domain.ends_with("github.com")) &&
                         !description.contains(title))
@@ -297,7 +298,7 @@ fn walk_for_metadata(node: Handle, title: &mut String, description: &mut String)
                     }
                 }
             }
-        } else if &*name.local == "meta" {
+        } else if cfg!(feature = "show_description") && &*name.local == "meta" {
             let mut in_description = false;
             for attr in attrs.borrow().iter() {
                 if &*attr.name.local == "name" && &*attr.value == "description" {
