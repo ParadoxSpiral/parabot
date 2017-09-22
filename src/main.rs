@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
-#![feature(const_fn, inclusive_range, inclusive_range_syntax)]
+#![feature(const_atomic_bool_new, onst_fn, inclusive_range, inclusive_range_syntax)]
 #![recursion_limit = "128"]
 
 extern crate chrono;
@@ -31,7 +31,6 @@ extern crate parking_lot;
 extern crate percent_encoding;
 extern crate regex;
 extern crate reqwest;
-extern crate serde;
 extern crate serde_json;
 extern crate slog_async;
 extern crate slog_term;
