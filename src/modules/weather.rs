@@ -101,26 +101,24 @@ pub fn handle(
                 {
                     cached.clone()
                 } else {
-                    return Ok(
-                        "You have never used `.weather` before, try `.help weather`".into(),
-                    );
+                    return Ok("You have never used `.weather` before, try `.help weather`".into());
                 }
             })
         } else {
             // Only compile the regex once
             lazy_static! {
-		        static ref REGEX: Regex = Regex::new("\
-		        	\\s{0,}\
-		        	(?:\
+                static ref REGEX: Regex = Regex::new("\
+                    \\s{0,}\
+                    (?:\
                         (?:(?:(?P<range_x>\\d+)-(?P<range_y>\\d+))\
                              |(?P<digits>\\d+))\
                         \\s{0,}\
-			        	(?:(?P<h>h)|(?P<d>d))\
+                        (?:(?P<h>h)|(?P<d>d))\
                         \\s{0,}\
                         (?P<inner_location>.+){0,1}\
-			        )|\
-		        	(?P<outer_location>.+)").unwrap();
-		    }
+                    )|\
+                    (?P<outer_location>.+)").unwrap();
+            }
 
             let captures = if let Some(caps) = REGEX.captures(&msg[1..]) {
                 trace!(log, "Weather captures: {:?}", caps);
@@ -133,8 +131,7 @@ pub fn handle(
             let range = if let Some(d) = captures.name("digits") {
                 let n = d.as_str().parse::<usize>().unwrap();
                 n...n
-            } else if let (Some(x), Some(y)) =
-                (captures.name("range_x"), captures.name("range_y"))
+            } else if let (Some(x), Some(y)) = (captures.name("range_x"), captures.name("range_y"))
             {
                 let x = x.as_str().parse::<usize>().unwrap();
                 let y = y.as_str().parse::<usize>().unwrap();
@@ -145,9 +142,7 @@ pub fn handle(
             let h = captures.name("h").is_some() || captures.name("hours").is_some();
             let d = captures.name("d").is_some() || captures.name("days").is_some();
             if range.end > 168 && h || range.end > 7 && d {
-                return Ok(
-                    "Weather data is only available for the next 168h or 7d.".to_owned(),
-                );
+                return Ok("Weather data is only available for the next 168h or 7d.".to_owned());
             }
 
             (

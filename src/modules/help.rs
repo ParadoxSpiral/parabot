@@ -42,12 +42,12 @@ pub fn handle(cfg: &ServerCfg, target: &str, msg: &str, private: bool) -> Option
     } else {
         // Starts with help, e.g. more args
         match msg[6..].trim() {
-            "bots" | ".bots" => Some(
-                ".bots will (hopefully) cause all bots in the channel to reply.".to_owned(),
-            ),
-            "ddg" | ".ddg" => Some(
-                ".ddg <search> uses ddg's instant answer API to perform a search.".to_owned(),
-            ),
+            "bots" | ".bots" => {
+                Some(".bots will (hopefully) cause all bots in the channel to reply.".to_owned())
+            }
+            "ddg" | ".ddg" => {
+                Some(".ddg <search> uses ddg's instant answer API to perform a search.".to_owned())
+            }
             "tell" | ".tell" => Some(
                 ".tell <nick> <message> will tell the user with <nick> <message>, \
                  when they join a channel shared with me."

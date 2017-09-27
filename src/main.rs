@@ -147,11 +147,11 @@ fn main() {
     // Init state of each server
     let mut state = Vec::with_capacity(config.servers.len());
     for cfg in config.servers {
-        let log = Arc::new(SLOG_ROOT.new(
-            o!(
+        let log = Arc::new(
+            SLOG_ROOT.new(o!(
                             "Server" => format!("{} on {}:{}", cfg.nickname, cfg.address, cfg.port),
-                            "Channels" => format!("{:?}", cfg.channels)),
-        ));
+                            "Channels" => format!("{:?}", cfg.channels))),
+        );
         state.push((
             Arc::new(wait_err(cfg.new_ircserver())),
             Arc::new(cfg),
@@ -168,10 +168,7 @@ fn main() {
         scope.spawn(move || {
             // Handle registration etc
             wait_err(srv1.identify());
-            wait_err(srv1.send_mode(
-                &cfg.nickname,
-                &[Mode::Plus(UserMode::Invisible, None)],
-            ));
+            wait_err(srv1.send_mode(&cfg.nickname, &[Mode::Plus(UserMode::Invisible, None)]));
             // Listen for, and handle, messages
             wait_err(srv1.for_each_incoming(|msg| {
                 let cfg = cfg.clone();

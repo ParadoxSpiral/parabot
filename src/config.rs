@@ -26,8 +26,7 @@ use errors::*;
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
-    #[serde(rename = "server")]
-    pub servers: Vec<ServerCfg>,
+    #[serde(rename = "server")] pub servers: Vec<ServerCfg>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -36,27 +35,21 @@ pub struct ServerCfg {
     pub address: String,
     pub port: u16,
     pub nickname: String,
-    #[serde(rename = "alternative_nicknames")]
-    pub alt_nicknames: Option<Vec<String>>,
-    #[serde(rename = "nickserv_password")]
-    pub nick_password: String,
+    #[serde(rename = "alternative_nicknames")] pub alt_nicknames: Option<Vec<String>>,
+    #[serde(rename = "nickserv_password")] pub nick_password: String,
     pub server_password: Option<String>,
     pub database: String,
-    #[serde(rename = "weather_api_secret")]
-    pub weather_secret: Option<String>,
-    #[serde(rename = "geocoding_api_key")]
-    pub geocoding_key: Option<String>,
+    #[serde(rename = "weather_api_secret")] pub weather_secret: Option<String>,
+    #[serde(rename = "geocoding_api_key")] pub geocoding_key: Option<String>,
     pub wolframalpha_appid: Option<String>,
-    #[serde(rename = "youtube_api_key")]
-    pub youtube_key: Option<String>,
+    #[serde(rename = "youtube_api_key")] pub youtube_key: Option<String>,
     pub google_search_id: Option<String>,
     pub google_search_key: Option<String>,
     pub max_burst_messages: Option<u32>,
     pub burst_window_length: Option<u32>,
     pub owners: Vec<String>,
     pub wormy_nick: Option<String>,
-    #[serde(rename = "channel")]
-    pub channels: Vec<ChannelCfg>,
+    #[serde(rename = "channel")] pub channels: Vec<ChannelCfg>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -111,8 +104,8 @@ impl ServerCfg {
 pub fn parse_config(input: &str) -> Result<Config> {
     let ret = de::from_str::<Config>(input)?;
     for srv in &ret.servers {
-        if (srv.weather_secret.is_none() || srv.geocoding_key.is_none()) &&
-            srv.channels
+        if (srv.weather_secret.is_none() || srv.geocoding_key.is_none())
+            && srv.channels
                 .iter()
                 .any(|c| c.modules.iter().any(|m| m == "weather"))
         {
@@ -120,8 +113,8 @@ pub fn parse_config(input: &str) -> Result<Config> {
                 "Weather module enabled on {:?}, but no weather API secret or geocoding key given",
                 &srv.address
             );
-        } else if srv.wolframalpha_appid.is_none() &&
-            srv.channels
+        } else if srv.wolframalpha_appid.is_none()
+            && srv.channels
                 .iter()
                 .any(|c| c.modules.iter().any(|m| m == "wolframaplha"))
         {
@@ -129,8 +122,8 @@ pub fn parse_config(input: &str) -> Result<Config> {
                 "Wolframalpha module enabled on {:?}, but no appid given",
                 &srv.address
             );
-        } else if srv.youtube_key.is_none() &&
-            srv.channels
+        } else if srv.youtube_key.is_none()
+            && srv.channels
                 .iter()
                 .any(|c| c.modules.iter().any(|m| m == "youtube"))
         {
@@ -138,8 +131,8 @@ pub fn parse_config(input: &str) -> Result<Config> {
                 "Youtube module enabled on {:?}, but no key given",
                 &srv.address
             );
-        } else if srv.wormy_nick.is_none() &&
-            srv.channels
+        } else if srv.wormy_nick.is_none()
+            && srv.channels
                 .iter()
                 .any(|c| c.modules.iter().any(|m| m == "wormy"))
         {
@@ -147,8 +140,8 @@ pub fn parse_config(input: &str) -> Result<Config> {
                 "Wormy module enabled on {:?}, but no nick given",
                 &srv.address
             );
-        } else if (srv.google_search_id.is_none() || srv.google_search_key.is_none()) &&
-            srv.channels
+        } else if (srv.google_search_id.is_none() || srv.google_search_key.is_none())
+            && srv.channels
                 .iter()
                 .any(|c| c.modules.iter().any(|m| m == "google"))
         {

@@ -42,8 +42,8 @@ pub fn handle(cfg: &ServerCfg, url: Url, target: &str, regex_match: bool) -> Res
     let sign = if regex_match { "┗━ " } else { "" };
 
     // Invoke either site specific or generic handler
-    if module_enabled_channel(cfg, target, "youtube") &&
-        (domain.ends_with("youtube.com") || domain.ends_with("youtu.be"))
+    if module_enabled_channel(cfg, target, "youtube")
+        && (domain.ends_with("youtube.com") || domain.ends_with("youtu.be"))
     {
         let path = url.path_segments().unwrap().last().unwrap();
         let mut query = url.query_pairs();
@@ -64,8 +64,7 @@ pub fn handle(cfg: &ServerCfg, url: Url, target: &str, regex_match: bool) -> Res
                     cfg.youtube_key.as_ref().unwrap(),
                     path.split('?').next().unwrap()
                 ))
-            }?
-                .json()?;
+            }?.json()?;
             let channel = resp.pointer("/items/0/snippet/channelTitle")
                 .unwrap()
                 .as_str()
@@ -115,7 +114,7 @@ pub fn handle(cfg: &ServerCfg, url: Url, target: &str, regex_match: bool) -> Res
                         " [Region restricted|Ratings disabled]"
                     } else if restricted {
                         " [Region restricted]"
-                    } else if ratings_disabled  {
+                    } else if ratings_disabled {
                         " [Ratings disabled]"
                     } else {
                         ""
@@ -127,8 +126,8 @@ pub fn handle(cfg: &ServerCfg, url: Url, target: &str, regex_match: bool) -> Res
         } else {
             unimplemented!("{}, {:?}", path, query)
         }
-    } else if module_enabled_channel(cfg, target, "wolframalpha") &&
-        domain.ends_with("wolframalpha.com")
+    } else if module_enabled_channel(cfg, target, "wolframalpha")
+        && domain.ends_with("wolframalpha.com")
     {
         let i = url.query_pairs().find(|&(ref k, _)| k == "i").unwrap().1;
         let i = percent_decode(i.as_bytes()).decode_utf8()?;
@@ -174,8 +173,7 @@ pub fn handle(cfg: &ServerCfg, url: Url, target: &str, regex_match: bool) -> Res
                     .1
                     .as_bytes()
             ).decode_utf8()?
-        ))?
-            .json()?;
+        ))?.json()?;
 
         let mut formatted = String::new();
         for (n, item) in body.pointer("/items")
@@ -235,10 +233,10 @@ pub fn handle(cfg: &ServerCfg, url: Url, target: &str, regex_match: bool) -> Res
                 let description = description.trim();
                 if title.is_empty() {
                     Err(ErrorKind::NoExtractableData.into())
-                } else if !cfg!(feature = "show_description") ||
-                    ((description.is_empty() || domain.ends_with("imgur.com") ||
-                        domain.ends_with("github.com")) &&
-                        !description.contains(title))
+                } else if !cfg!(feature = "show_description")
+                    || ((description.is_empty() || domain.ends_with("imgur.com")
+                        || domain.ends_with("github.com"))
+                        && !description.contains(title))
                 {
                     Ok(format!("{}{}", sign, title))
                 } else if description.contains(title) {
@@ -362,8 +360,7 @@ mod jisho {
     pub fn handle(input: &str, sign: &str) -> Result<String> {
         let resp: ApiResponse = reqwest::get(
             &(API_BASE.to_owned() + &percent_decode(input.as_bytes()).decode_utf8()?),
-        )?
-            .json()?;
+        )?.json()?;
         let resp = resp.data;
 
         let mut ret = String::from(sign);

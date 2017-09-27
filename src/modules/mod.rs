@@ -132,8 +132,8 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
 
             // Ignore msgs by other bots with the same nick
             // (e.g. when working under the hivemind wormy)
-            if module_enabled_channel(cfg, &*target, "wormy") &&
-                msg.source_nickname().unwrap() == cfg.wormy_nick.as_ref().unwrap()
+            if module_enabled_channel(cfg, &*target, "wormy")
+                && msg.source_nickname().unwrap() == cfg.wormy_nick.as_ref().unwrap()
             {
                 LAST_MESSAGE.store(false, Ordering::Release);
                 return Ok(());
@@ -163,8 +163,8 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                             &reply,
                         )?;
                     }
-                } else if &content[1..] == "exit" || &content[1..] == "quit" ||
-                    &content[1..] == "part"
+                } else if &content[1..] == "exit" || &content[1..] == "quit"
+                    || &content[1..] == "part"
                 {
                     info!(log, "Exit requested!");
                     process::exit(2);
@@ -178,8 +178,8 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                             "parabot of the hive replied to the last command/url",
                         )?;
                     }
-                } else if (private || module_enabled_channel(cfg, &*target, "tell")) &&
-                    content[1..].starts_with("tell")
+                } else if (private || module_enabled_channel(cfg, &*target, "tell"))
+                    && content[1..].starts_with("tell")
                 {
                     trace!(log, "Starting .tell");
                     let reply = tell::add(cfg, log, msg, private)?;
@@ -187,8 +187,8 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                     if module_enabled_channel(cfg, &*target, "wormy") {
                         LAST_MESSAGE.store(true, Ordering::Release);
                     }
-                } else if (private || module_enabled_channel(cfg, &*target, "duckduckgo")) &&
-                    content[1..].starts_with("ddg")
+                } else if (private || module_enabled_channel(cfg, &*target, "duckduckgo"))
+                    && content[1..].starts_with("ddg")
                 {
                     trace!(log, "Starting .ddg");
                     let reply = ddg::handle(cfg, content[4..].trim(), &*target)?;
@@ -196,15 +196,15 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                     if module_enabled_channel(cfg, &*target, "wormy") {
                         LAST_MESSAGE.store(true, Ordering::Release);
                     }
-                } else if (private || module_enabled_channel(cfg, &*target, "google")) &&
-                    content[1..].starts_with('g')
+                } else if (private || module_enabled_channel(cfg, &*target, "google"))
+                    && content[1..].starts_with('g')
                 {
                     trace!(log, "Starting .ddg !g");
                     let reply = url::handle(
                         cfg,
                         Url::parse(
-                            &("https://encrypted.google.com/search?q=".to_owned() +
-                                content[2..].trim()),
+                            &("https://encrypted.google.com/search?q=".to_owned()
+                                + content[2..].trim()),
                         )?,
                         &*target,
                         false,
@@ -213,15 +213,15 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                     if module_enabled_channel(cfg, &*target, "wormy") {
                         LAST_MESSAGE.store(true, Ordering::Release);
                     }
-                } else if (private || module_enabled_channel(cfg, &*target, "wolframalpha")) &&
-                    content[1..].starts_with("wa")
+                } else if (private || module_enabled_channel(cfg, &*target, "wolframalpha"))
+                    && content[1..].starts_with("wa")
                 {
                     trace!(log, "Starting .ddg !wa");
                     let reply = url::handle(
                         cfg,
                         Url::parse(
-                            &("https://www.wolframalpha.com/input/?i=".to_owned() +
-                                content[3..].trim()),
+                            &("https://www.wolframalpha.com/input/?i=".to_owned()
+                                + content[3..].trim()),
                         )?,
                         &*target,
                         false,
@@ -230,15 +230,13 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                     if module_enabled_channel(cfg, &*target, "wormy") {
                         LAST_MESSAGE.store(true, Ordering::Release);
                     }
-                } else if (private || module_enabled_channel(cfg, &*target, "jisho")) &&
-                    content[1..].starts_with("jisho")
+                } else if (private || module_enabled_channel(cfg, &*target, "jisho"))
+                    && content[1..].starts_with("jisho")
                 {
                     trace!(log, "Starting .ddg !jisho");
                     let reply = url::handle(
                         cfg,
-                        Url::parse(
-                            &("http://jisho.org/search/".to_owned() + content[6..].trim()),
-                        )?,
+                        Url::parse(&("http://jisho.org/search/".to_owned() + content[6..].trim()))?,
                         &*target,
                         false,
                     )?;
@@ -246,8 +244,8 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                     if module_enabled_channel(cfg, &*target, "wormy") {
                         LAST_MESSAGE.store(true, Ordering::Release);
                     }
-                } else if (private || module_enabled_channel(cfg, &*target, "weather")) &&
-                    content[1..].starts_with("weather")
+                } else if (private || module_enabled_channel(cfg, &*target, "weather"))
+                    && content[1..].starts_with("weather")
                 {
                     trace!(log, "Starting .weather");
                     let nick = msg.source_nickname().unwrap();
@@ -279,8 +277,8 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                     let ghetto_catch = || -> Result<()> {
                         if private || !cfg.channels.iter().any(|c| {
                             let domain = url.domain().unwrap();
-                            *c.name == *target &&
-                                c.url_blacklisted_domains
+                            *c.name == *target
+                                && c.url_blacklisted_domains
                                     .iter()
                                     .any(|ds| ds.iter().any(|d| *d == *domain))
                         }) {
@@ -317,7 +315,7 @@ where
     F: Fn(&SqliteConnection) -> Result<T>,
 {
     lazy_static!(
-        static ref DATABASE_CONNS: RwLock<HashMap<String, Mutex<SqliteConnection>>> = 
+        static ref DATABASE_CONNS: RwLock<HashMap<String, Mutex<SqliteConnection>>> =
             RwLock::new(HashMap::new());
     );
 
@@ -367,8 +365,8 @@ fn send_segmented_message(
 ) -> Result<()> {
     let msg_bytes = msg.bytes().len();
     // :<hostname> PRIVMSG <target> :\u{200B}<message>
-    let fix_bytes = 1 + HOSTNAMES.read().get(&cfg.address).unwrap().bytes().len() + 9 +
-        target.bytes().len() + 3;
+    let fix_bytes = 1 + HOSTNAMES.read().get(&cfg.address).unwrap().bytes().len() + 9
+        + target.bytes().len() + 3;
     trace!(log, "Msg bytes: {}; Fix bytes: {}", msg_bytes, fix_bytes);
 
     let send = |msg: &str| srv.send_privmsg(target, &msg.replace('\n', " "));

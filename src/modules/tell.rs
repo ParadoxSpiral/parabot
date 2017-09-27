@@ -199,16 +199,20 @@ pub fn add(cfg: &ServerCfg, log: &Logger, msg: &Message, private: bool) -> Resul
             s
         } else {
             trace!(log, "invalid tell: {:?}", msg);
-            return Ok(
-                "Invalid `.tell` syntax, try: `.tell <nick> <message>`".into(),
-            );
+            return Ok("Invalid `.tell` syntax, try: `.tell <nick> <message>`".into());
         };
 
         let date = &Utc::now().to_rfc2822()[..25];
         let pending_tell = models::NewPendingTell {
             date: date,
             server_addr: &cfg.address,
-            channel: { if private { None } else { Some(target) } },
+            channel: {
+                if private {
+                    None
+                } else {
+                    Some(target)
+                }
+            },
             source_nick: source_nick,
             target_nick: target_nick,
             message: target_msg.trim(),
@@ -230,7 +234,6 @@ pub fn add(cfg: &ServerCfg, log: &Logger, msg: &Message, private: bool) -> Resul
                 target_msg.trim()
             ))
         })
-
     } else {
         unreachable!()
     }

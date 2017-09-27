@@ -58,9 +58,7 @@ pub fn handle(cfg: &ServerCfg, msg: &str, target: &str) -> Result<String> {
         Type::Article | Type::Name => Ok(format!("{}: {}", resp.abstract_url, resp.abstract_text)),
         Type::Exclusive => {
             let url = Url::parse(&resp.redirect)?;
-            Ok(
-                format!("{}: ", resp.redirect) + &super::url::handle(cfg, url, &*target, false)?,
-            )
+            Ok(format!("{}: ", resp.redirect) + &super::url::handle(cfg, url, &*target, false)?)
         }
         Type::Nothing => unimplemented!("{:?}", resp),
     }
