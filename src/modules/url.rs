@@ -431,7 +431,7 @@ mod jisho {
                 &senses,
             ));
         }
-        if ret != "" {
+        if ret != sign {
             Ok(ret)
         } else {
             Err(ErrorKind::NoExtractableData.into())
