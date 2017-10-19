@@ -94,7 +94,7 @@ pub fn handle(
     let (range, hours, days, location) = {
         // Use last location
         if msg.is_empty() {
-            (0...0, false, false, {
+            (0..=0, false, false, {
                 if let Some(cached) = LOCATION_CACHE
                     .read()
                     .get(&(cfg.address.clone(), nick.to_owned()))
@@ -130,14 +130,14 @@ pub fn handle(
 
             let range = if let Some(d) = captures.name("digits") {
                 let n = d.as_str().parse::<usize>().unwrap();
-                n...n
+                n..=n
             } else if let (Some(x), Some(y)) = (captures.name("range_x"), captures.name("range_y"))
             {
                 let x = x.as_str().parse::<usize>().unwrap();
                 let y = y.as_str().parse::<usize>().unwrap();
-                x...y
+                x..=y
             } else {
-                0...0
+                0..=0
             };
             let h = captures.name("h").is_some() || captures.name("hours").is_some();
             let d = captures.name("d").is_some() || captures.name("days").is_some();
@@ -232,25 +232,18 @@ pub fn handle(
         reverse_location = revl.clone();
         client = None;
     } else {
-        let reqwest_client = Client::new()?;
-        let mut res = reqwest_client
+        let reqwest_client = Client::new();
+        let json: Value = reqwest_client
             .get(&format!(
                 "{}?key={}&location={}",
                 GEOCODING_API_BASE,
                 cfg.geocoding_key.as_ref().unwrap(),
                 location
-            ))?
+            ))
             .header(AcceptEncoding(vec![qitem(Encoding::Gzip)]))
-            .send()?;
-        if !res.status().is_success() {
-            bail!("Failed to query geocoding API: {}", res.status());
-        }
+            .send()?.json()?;
 
         drop(cache);
-
-        let mut body = String::new();
-        res.read_to_string(&mut body).unwrap();
-        let json: Value = de::from_str(&body).unwrap();
 
         let status = json.pointer("/info/statuscode").unwrap().as_u64().unwrap();
         let messages = json.pointer("/info/messages").unwrap().as_array().unwrap();
@@ -285,23 +278,16 @@ pub fn handle(
         trace!(log, "Geocode quality: {}", quality);
 
         // Reverse geocode lookup to get location to reply with
-        let mut res = reqwest_client
+        let json: Value = reqwest_client
             .get(&format!(
                 "{}?key={}&location={},{}",
                 REVERSE_GEOCODING_API_BASE,
                 cfg.geocoding_key.as_ref().unwrap(),
                 lat,
                 lng
-            ))?
+            ))
             .header(AcceptEncoding(vec![qitem(Encoding::Gzip)]))
-            .send()?;
-        if !res.status().is_success() {
-            bail!("Failed to query geocoding API: {}", res.status())
-        };
-
-        let mut body = String::new();
-        res.read_to_string(&mut body).unwrap();
-        let json: Value = de::from_str(&body).unwrap();
+            .send()?.json()?;
 
         let status = json.pointer("/info/statuscode").unwrap().as_u64().unwrap();
         if status == 403 {
@@ -370,7 +356,7 @@ pub fn handle(
     }
 
     // future, n, hours, days, location
-    let client = client.or_else(|| Some(Client::new().unwrap())).unwrap();
+    let client = client.or(Some(Client::new())).unwrap();
     let api_client = ApiClient::new(&client);
     let secret = cfg.weather_secret.as_ref().unwrap();
     let mut builder = ForecastRequestBuilder::new(secret, latitude as f64, longitude as f64)
@@ -549,7 +535,7 @@ pub fn handle(
                 reverse_location
             ));
         }
-        for (n, data) in data.data[range.start...range.end]
+        for (n, data) in data.data[range.start..=range.end]
             .into_iter()
             .cloned()
             .enumerate()

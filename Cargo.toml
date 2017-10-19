@@ -38,7 +38,7 @@ lazy_static = "0.2"
 parking_lot = {version = "0.4", features = ["nightly"]}
 percent-encoding = "1"
 regex = "0.2"
-reqwest = "0.7"
+reqwest = "0.8"
 serde = "1"
 serde_derive = "1"
 serde_json = "1"
@@ -48,7 +48,7 @@ slog-term = "2"
 threadpool = "1"
 toml = "0.4"
 unicode-segmentation = "1"
-urlshortener = "0.7"
+urlshortener = "0.8"
 
 [dependencies.wolfram_alpha]
 git = "https://github.com/ParadoxSpiral/wolfram-alpha-rs"

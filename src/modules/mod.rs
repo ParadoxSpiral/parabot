@@ -255,7 +255,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                         LAST_MESSAGE.store(true, Ordering::Release);
                     }
                 } else {
-                    warn!(log, "Unknown command {}", &content[1..]);
+                    debug!(log, "Unknown command {}", &content[1..]);
                 }
             } else if private || module_enabled_channel(cfg, &*target, "url-info") {
                 lazy_static! (

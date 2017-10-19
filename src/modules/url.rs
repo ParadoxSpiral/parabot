@@ -199,8 +199,8 @@ pub fn handle(cfg: &ServerCfg, url: Url, target: &str, regex_match: bool) -> Res
         }
         Ok(formatted)
     } else {
-        let client = Client::new()?;
-        let response = client.head(url.as_str())?.send()?;
+        let client = Client::new();
+        let response = client.head(url.as_str()).send()?;
         let headers = response.headers();
         let content_length = headers.get::<ContentLength>();
         let content_type = headers.get::<ContentType>();
@@ -214,7 +214,7 @@ pub fn handle(cfg: &ServerCfg, url: Url, target: &str, regex_match: bool) -> Res
             )),
             (None, Some(mime)) if mime.0.subtype() != mime::HTML => Ok(format!("┗━ {}", mime)),
             (_, Some(mime)) if mime.0.subtype() == mime::HTML => {
-                let mut response = client.get(url.as_str())?.send()?;
+                let mut response = client.get(url.as_str()).send()?;
                 let mut bytes = Vec::new();
                 response.read_to_end(&mut bytes)?;
 
