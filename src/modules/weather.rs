@@ -241,7 +241,8 @@ pub fn handle(
                 location
             ))
             .header(AcceptEncoding(vec![qitem(Encoding::Gzip)]))
-            .send()?.json()?;
+            .send()?
+            .json()?;
 
         drop(cache);
 
@@ -287,7 +288,8 @@ pub fn handle(
                 lng
             ))
             .header(AcceptEncoding(vec![qitem(Encoding::Gzip)]))
-            .send()?.json()?;
+            .send()?
+            .json()?;
 
         let status = json.pointer("/info/statuscode").unwrap().as_u64().unwrap();
         if status == 403 {

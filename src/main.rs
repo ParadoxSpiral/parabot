@@ -29,6 +29,7 @@ extern crate humansize;
 extern crate irc;
 extern crate parking_lot;
 extern crate percent_encoding;
+extern crate rand;
 extern crate regex;
 extern crate reqwest;
 extern crate serde_json;

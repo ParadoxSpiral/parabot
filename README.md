@@ -24,6 +24,7 @@ The list of modules is as follows:
 	* jisho: `1: kanji(kana) rarity [type: meanings]; …; 3: …` .jisho to search
 	* youtube: `title [duration] (channel) views HD|SD [Region restricted|Ratings disabled]`
 * weather: get weather information of a location
+* choose: pick a random element of a space seperated list
 
 The list of planned modules is as follows:
 * remind: let the bot remind you of something at some time

@@ -20,6 +20,7 @@ use diesel::Connection;
 use diesel::sqlite::SqliteConnection;
 use irc::client::prelude::*;
 use parking_lot::{Mutex, RwLock};
+use rand::{thread_rng, Rng};
 use regex::Regex;
 use reqwest::Url;
 use slog::Logger;
@@ -250,6 +251,19 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                     trace!(log, "Starting .weather");
                     let nick = msg.source_nickname().unwrap();
                     let reply = weather::handle(cfg, srv, log, &content[8..], nick)?;
+                    send_segmented_message(cfg, srv, log, reply_target, &reply)?;
+                    if module_enabled_channel(cfg, &*target, "wormy") {
+                        LAST_MESSAGE.store(true, Ordering::Release);
+                    }
+                } else if (private || module_enabled_channel(cfg, &*target, "choose"))
+                    && content[1..].starts_with("choose")
+                {
+                    trace!(log, "Starting .choose");
+                    let opts = content[8..]
+                        .split(' ')
+                        .filter(|e| e.trim() != "")
+                        .collect::<Vec<_>>();
+                    let reply = thread_rng().choose(&opts).unwrap();
                     send_segmented_message(cfg, srv, log, reply_target, &reply)?;
                     if module_enabled_channel(cfg, &*target, "wormy") {
                         LAST_MESSAGE.store(true, Ordering::Release);
