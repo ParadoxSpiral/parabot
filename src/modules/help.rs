@@ -73,6 +73,10 @@ pub fn handle(cfg: &ServerCfg, target: &str, msg: &str, private: bool) -> Option
                  last command."
                     .to_owned(),
             ),
+            "choose" | ".choose" => Some(
+                ".choose x y\\ x \"z\" 'r' … will randomly pick one of the provided elements, \
+                 which are parsed via shlex.".to_owned(),
+            ),
             _ => if super::module_enabled_channel(cfg, &*target, "wormy") {
                 None
             } else {

@@ -23,6 +23,7 @@ use parking_lot::{Mutex, RwLock};
 use rand::{thread_rng, Rng};
 use regex::Regex;
 use reqwest::Url;
+use shlex;
 use slog::Logger;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -259,10 +260,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                     && content[1..].starts_with("choose")
                 {
                     trace!(log, "Starting .choose");
-                    let opts = content[8..]
-                        .split(' ')
-                        .filter(|e| e.trim() != "")
-                        .collect::<Vec<_>>();
+                    let opts = shlex::split(&content[8..]).unwrap();
                     let reply = thread_rng().choose(&opts).unwrap();
                     send_segmented_message(cfg, srv, log, reply_target, &reply)?;
                     if module_enabled_channel(cfg, &*target, "wormy") {

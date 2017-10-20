@@ -33,6 +33,7 @@ extern crate rand;
 extern crate regex;
 extern crate reqwest;
 extern crate serde_json;
+extern crate shlex;
 extern crate slog_async;
 extern crate slog_term;
 extern crate threadpool;
