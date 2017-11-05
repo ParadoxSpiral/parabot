@@ -38,6 +38,7 @@ lazy_static = "0.2"
 parking_lot = {version = "0.4", features = ["nightly"]}
 percent-encoding = "1"
 rand = "0.3"
+rayon = "0.8"
 regex = "0.2"
 reqwest = "0.8"
 serde = "1"

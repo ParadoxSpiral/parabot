@@ -164,8 +164,8 @@ pub fn handle(
                             if cached_loc.to_lowercase() != new_loc.to_lowercase() {
                                 trace!(log, "Updating Cache/DB");
                                 cache.remove(&(cfg.address.clone(), nick.to_owned()));
-                                cache.insert((cfg.address.clone(),nick.to_owned()),
-                                    new_loc.clone());
+                                cache
+                                    .insert((cfg.address.clone(), nick.to_owned()), new_loc.clone());
                                 drop(cache);
 
                                 super::with_database(cfg, |db| {

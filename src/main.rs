@@ -30,6 +30,7 @@ extern crate irc;
 extern crate parking_lot;
 extern crate percent_encoding;
 extern crate rand;
+extern crate rayon;
 extern crate regex;
 extern crate reqwest;
 extern crate serde_json;
@@ -149,11 +150,9 @@ fn main() {
     // Init state of each server
     let mut state = Vec::with_capacity(config.servers.len());
     for cfg in config.servers {
-        let log = Arc::new(
-            SLOG_ROOT.new(o!(
+        let log = Arc::new(SLOG_ROOT.new(o!(
                             "Server" => format!("{} on {}:{}", cfg.nickname, cfg.address, cfg.port),
-                            "Channels" => format!("{:?}", cfg.channels))),
-        );
+                            "Channels" => format!("{:?}", cfg.channels))));
         state.push((
             Arc::new(wait_err(cfg.new_ircserver())),
             Arc::new(cfg),

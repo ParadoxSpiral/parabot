@@ -21,6 +21,7 @@ use diesel::sqlite::SqliteConnection;
 use irc::client::prelude::*;
 use parking_lot::{Mutex, RwLock};
 use rand::{thread_rng, Rng};
+use rayon::prelude::*;
 use regex::Regex;
 use reqwest::Url;
 use shlex;
@@ -281,12 +282,13 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                             )(?:>){0,})\
                         .*?").unwrap();
                 );
-                for cap in URL_REGEX.captures_iter(content) {
-                    let url = Url::parse(cap.name("url").unwrap().as_str())?;
-                    trace!(log, "URL match: {:?}", url);
-
-                    // Instead of returning on error, "catch" it to process as many urls as possible
-                    let ghetto_catch = || -> Result<()> {
+                let replies = URL_REGEX
+                    .captures_iter(content)
+                    .collect::<Vec<_>>()
+                    .par_iter()
+                    .map(|cap| {
+                        let url = Url::parse(cap.name("url").unwrap().as_str()).unwrap();
+                        trace!(log, "URL match: {:?}", url);
                         if private || !cfg.channels.iter().any(|c| {
                             let domain = url.domain().unwrap();
                             *c.name == *target
@@ -294,17 +296,25 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                                     .iter()
                                     .any(|ds| ds.iter().any(|d| *d == *domain))
                         }) {
+                            Some(url::handle(cfg, url, &*target, true))
+                        } else {
+                            None
+                        }
+                    })
+                    .filter_map(|e| e)
+                    .collect::<Vec<Result<String>>>();
+                for reply in replies.into_iter() {
+                    match reply {
+                        Ok(reply) => {
                             let reply_target = msg.response_target().unwrap();
-                            let reply = url::handle(cfg, url, &*target, true)?;
-                            send_segmented_message(cfg, srv, log, reply_target, &reply)?;
+                            send_segmented_message(cfg, srv, log, reply_target, &reply).unwrap();
                             if module_enabled_channel(cfg, &*target, "wormy") {
                                 LAST_MESSAGE.store(true, Ordering::Release);
                             }
                         }
-                        Ok(())
-                    };
-                    if let Err(e) = ghetto_catch() {
-                        crit!(log, "{:?}", e);
+                        Err(e) => {
+                            crit!(log, "{:?}", e);
+                        }
                     }
                 }
             }
