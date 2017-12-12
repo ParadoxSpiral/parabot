@@ -474,7 +474,7 @@ pub fn handle(
                             "\x02{}: {}\x02 in {} …]; <{}>",
                             n + 1,
                             a.title,
-                            &a.regions.iter().take(13).fold("[".to_owned(), |acc, reg| acc + reg + ","),
+                            &a.regions.iter().take(8).fold("[".to_owned(), |acc, reg| acc + reg + ","),
                             a.description
                         ),
                     )?;
