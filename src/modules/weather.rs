@@ -403,9 +403,9 @@ pub fn handle(
             if let (Some(tmi), Some(tma)) =
                 (dp.apparent_temperature_min, dp.apparent_temperature_max)
             {
-                out.push_str(&format!("\x02{}-{}\x02°C; ", tmi, tma));
+                out.push_str(&format!("\x02{}…{}\x02°C; ", tmi, tma));
             } else if let (Some(tmi), Some(tma)) = (dp.temperature_min, dp.temperature_max) {
-                out.push_str(&format!("\x02{}-{}\x02°C; ", tmi, tma));
+                out.push_str(&format!("\x02{}…{}\x02°C; ", tmi, tma));
             }
         } else if let Some(t) = dp.apparent_temperature {
             out.push_str(&format!("\x02{}\x02°C; ", t));
@@ -474,7 +474,7 @@ pub fn handle(
                             "\x02{}: {}\x02 in {} …]; <{}>",
                             n + 1,
                             a.title,
-                            &a.regions.iter().take(8).fold("[".to_owned(), |acc, reg| acc + reg + ","),
+                            &a.regions.iter().take(6).fold("[".to_owned(), |acc, reg| acc + reg + ","),
                             a.description
                         ),
                     )?;
