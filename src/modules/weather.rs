@@ -493,7 +493,7 @@ pub fn handle(
     };
 
     let mut formatted = String::new();
-    if range.start == range.end && range.start == 0 {
+    if range.start == range.end.saturating_sub(1) && range.start == 0 {
         let data;
         if days {
             data = &res.daily.as_ref().unwrap().data[0];
@@ -504,7 +504,7 @@ pub fn handle(
             formatted.push_str(&format!("Current weather in {} is ", reverse_location));
             format_data_point(&mut formatted, data);
         }
-    } else if range.start == range.end {
+    } else if range.start == range.end.saturating_sub(1) {
         let data;
         if days {
             data = &res.daily.as_ref().unwrap().data[range.start];
