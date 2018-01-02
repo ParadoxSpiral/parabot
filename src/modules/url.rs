@@ -219,11 +219,11 @@ pub fn handle(cfg: &ServerCfg, url: Url, target: &str, regex_match: bool) -> Res
                 response.read_to_end(&mut bytes)?;
 
                 let dom = body_from_charsets(bytes, headers).and_then(|body| {
-                    Ok(html5ever::parse_document(
-                        RcDom::default(),
-                        Default::default(),
-                    ).from_utf8()
-                        .read_from(&mut Cursor::new(body))?)
+                    Ok(
+                        html5ever::parse_document(RcDom::default(), Default::default())
+                            .from_utf8()
+                            .read_from(&mut Cursor::new(body))?,
+                    )
                 })?;
 
                 let mut title = String::new();
@@ -308,10 +308,10 @@ fn walk_for_metadata(node: Handle, title: &mut String, description: &mut String)
             }
         },
         NodeData::ProcessingInstruction { .. } => unreachable!(),
-        NodeData::Document { .. } |
-        NodeData::Doctype { .. } |
-        NodeData::Comment { .. } |
-        NodeData::Text { .. } => {}
+        NodeData::Document { .. }
+        | NodeData::Doctype { .. }
+        | NodeData::Comment { .. }
+        | NodeData::Text { .. } => {}
     }
     for child in node.children.borrow().iter() {
         walk_for_metadata(child.clone(), title, description);
@@ -384,8 +384,7 @@ mod jisho {
                 if n == 0 {
                     senses.push_str(&format!(
                         "{}: {}",
-                        &parts_of_speech,
-                        &s.english_definitions[0]
+                        &parts_of_speech, &s.english_definitions[0]
                     ));
                 } else {
                     senses.push_str(&format!(", {}", &s.english_definitions[0]));

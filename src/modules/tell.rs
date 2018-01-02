@@ -175,10 +175,7 @@ fn send_tells(
     for t in tells {
         let msg = format!(
             "{}: {} wanted to tell you on {} UTC: {}",
-            &t.target_nick,
-            t.source_nick,
-            t.date,
-            t.message
+            &t.target_nick, t.source_nick, t.date, t.message
         );
         if t.channel.is_some() {
             super::send_segmented_message(cfg, srv, log, t.channel.as_ref().unwrap(), &msg)?;

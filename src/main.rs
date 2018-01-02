@@ -14,8 +14,6 @@
 //
 // You should have received a copy of the GNU General Public License
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
-
-#![feature(const_atomic_bool_new, onst_fn, inclusive_range, inclusive_range_syntax)]
 #![recursion_limit = "128"]
 
 extern crate chrono;
@@ -132,10 +130,9 @@ fn main() {
 
     // Spawn two threads per channel, incase modules lag on e.g. IO
     // TODO: Needs testing if this scales/is even necessary
-    let threads = config.servers.iter().fold(
-        0,
-        |acc, srv| srv.channels.iter().fold(acc, |acc, _| acc + 2),
-    );
+    let threads = config.servers.iter().fold(0, |acc, srv| {
+        srv.channels.iter().fold(acc, |acc, _| acc + 2)
+    });
     let pool = ThreadPool::new(threads);
     info!(
         SLOG_ROOT,
@@ -153,34 +150,32 @@ fn main() {
         let log = Arc::new(SLOG_ROOT.new(o!(
                             "Server" => format!("{} on {}:{}", cfg.nickname, cfg.address, cfg.port),
                             "Channels" => format!("{:?}", cfg.channels))));
-        state.push((
-            Arc::new(wait_err(cfg.new_ircserver())),
-            Arc::new(cfg),
-            log,
-        ));
+        state.push((Arc::new(wait_err(cfg.new_ircserver())), Arc::new(cfg), log));
     }
-    crossbeam::scope(move |scope| for &(ref srv, ref cfg, ref log) in &state {
-        // TODO: Is there a way to do less cloning?
-        let pool = pool.clone();
-        let cfg = cfg.clone();
-        let srv1 = srv.clone();
-        let srv2 = srv.clone();
-        let log = log.clone();
-        scope.spawn(move || {
-            // Handle registration etc
-            wait_err(srv1.identify());
-            wait_err(srv1.send_mode(&cfg.nickname, &[Mode::Plus(UserMode::Invisible, None)]));
-            // Listen for, and handle, messages
-            wait_err(srv1.for_each_incoming(|msg| {
-                let cfg = cfg.clone();
-                let srv = srv2.clone();
-                let log = log.clone();
-                pool.execute(move || {
-                    if let Err(e) = modules::handle(&cfg, &srv, &log, &msg) {
-                        crit!(&*log, "{:?}", e);
-                    }
-                });
-            }));
-        });
+    crossbeam::scope(move |scope| {
+        for &(ref srv, ref cfg, ref log) in &state {
+            // TODO: Is there a way to do less cloning?
+            let pool = pool.clone();
+            let cfg = cfg.clone();
+            let srv1 = srv.clone();
+            let srv2 = srv.clone();
+            let log = log.clone();
+            scope.spawn(move || {
+                // Handle registration etc
+                wait_err(srv1.identify());
+                wait_err(srv1.send_mode(&cfg.nickname, &[Mode::Plus(UserMode::Invisible, None)]));
+                // Listen for, and handle, messages
+                wait_err(srv1.for_each_incoming(|msg| {
+                    let cfg = cfg.clone();
+                    let srv = srv2.clone();
+                    let log = log.clone();
+                    pool.execute(move || {
+                        if let Err(e) = modules::handle(&cfg, &srv, &log, &msg) {
+                            crit!(&*log, "{:?}", e);
+                        }
+                    });
+                }));
+            });
+        }
     });
 }

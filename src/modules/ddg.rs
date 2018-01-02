@@ -30,10 +30,12 @@ pub fn handle(cfg: &ServerCfg, msg: &str, target: &str) -> Result<String> {
             let mut ret = String::new();
             for (n, related) in resp.related_topics
                 .iter()
-                .filter(|rt| if let RelatedTopic::TopicResult { .. } = **rt {
-                    true
-                } else {
-                    false
+                .filter(|rt| {
+                    if let RelatedTopic::TopicResult { .. } = **rt {
+                        true
+                    } else {
+                        false
+                    }
                 })
                 .take(3)
                 .enumerate()

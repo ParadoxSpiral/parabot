@@ -45,12 +45,12 @@ const COMMAND_MODIFIER: char = '.';
 // The spec does not define a limit, but it's 500b in most cases. However, the server may
 // add crap to your message, you cannot know. Hopefully 30b is enough..
 const MESSAGE_BYTES_LIMIT: usize = 470;
-static LAST_MESSAGE: AtomicBool = AtomicBool::new(false);
 
 lazy_static!{
     static ref HOSTNAMES: RwLock<HashMap<String, String>> = {
         RwLock::new(HashMap::new())
     };
+    static ref LAST_MESSAGE: AtomicBool = AtomicBool::new(false);
 }
 
 pub fn init(cfg: &Config, log: &Logger) -> Result<()> {
@@ -61,29 +61,29 @@ pub fn init(cfg: &Config, log: &Logger) -> Result<()> {
 pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> Result<()> {
     match msg.command {
         // Currently uninteresting messages
-        Command::NOTICE(..) |
-        Command::Response(Response::RPL_WELCOME, ..) |
-        Command::Response(Response::RPL_YOURHOST, ..) |
-        Command::Response(Response::RPL_CREATED, ..) |
-        Command::Response(Response::RPL_MYINFO, ..) |
-        Command::Response(Response::RPL_ISUPPORT, ..) |
-        Command::Response(Response::RPL_LUSERCLIENT, ..) |
-        Command::Response(Response::RPL_LUSEROP, ..) |
-        Command::Response(Response::RPL_LUSERUNKNOWN, ..) |
-        Command::Response(Response::RPL_LUSERCHANNELS, ..) |
-        Command::Response(Response::RPL_LUSERME, ..) |
-        Command::Response(Response::RPL_MOTDSTART, ..) |
-        Command::Response(Response::RPL_MOTD, ..) |
-        Command::Response(Response::RPL_ENDOFMOTD, ..) |
-        Command::Response(Response::ERR_NOTREGISTERED, ..) |
-        Command::Response(Response::RPL_ENDOFNAMES, ..) |
-        Command::Response(Response::RPL_TOPIC, ..) |
-        Command::PART(..) |
-        Command::ChannelMODE(..) |
-        Command::PING(..) |
-        Command::PONG(..) |
-        Command::QUIT(..) |
-        Command::Response(Response::RPL_TOPICWHOTIME, ..) => trace!(log, "{:?}", msg),
+        Command::NOTICE(..)
+        | Command::Response(Response::RPL_WELCOME, ..)
+        | Command::Response(Response::RPL_YOURHOST, ..)
+        | Command::Response(Response::RPL_CREATED, ..)
+        | Command::Response(Response::RPL_MYINFO, ..)
+        | Command::Response(Response::RPL_ISUPPORT, ..)
+        | Command::Response(Response::RPL_LUSERCLIENT, ..)
+        | Command::Response(Response::RPL_LUSEROP, ..)
+        | Command::Response(Response::RPL_LUSERUNKNOWN, ..)
+        | Command::Response(Response::RPL_LUSERCHANNELS, ..)
+        | Command::Response(Response::RPL_LUSERME, ..)
+        | Command::Response(Response::RPL_MOTDSTART, ..)
+        | Command::Response(Response::RPL_MOTD, ..)
+        | Command::Response(Response::RPL_ENDOFMOTD, ..)
+        | Command::Response(Response::ERR_NOTREGISTERED, ..)
+        | Command::Response(Response::RPL_ENDOFNAMES, ..)
+        | Command::Response(Response::RPL_TOPIC, ..)
+        | Command::PART(..)
+        | Command::ChannelMODE(..)
+        | Command::PING(..)
+        | Command::PONG(..)
+        | Command::QUIT(..)
+        | Command::Response(Response::RPL_TOPICWHOTIME, ..) => trace!(log, "{:?}", msg),
         Command::Raw(ref s, ..) if s == "250" || s == "265" || s == "266" => {
             trace!(log, "{:?}", msg)
         }
@@ -91,8 +91,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
             // Happens if the bot tries to join a protected channel before registration
             debug!(
                 log,
-                "Probably joined protected channel {:?} before registration, rejoining",
-                content[1]
+                "Probably joined protected channel {:?} before registration, rejoining", content[1]
             );
             if let Some(key) = cfg.channels
                 .iter()
@@ -327,9 +326,9 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
 }
 
 fn module_enabled_channel(cfg: &ServerCfg, target: &str, module: &str) -> bool {
-    cfg.channels.iter().any(|c| {
-        c.name == target && c.modules.iter().any(|m| m == module)
-    })
+    cfg.channels
+        .iter()
+        .any(|c| c.name == target && c.modules.iter().any(|m| m == module))
 }
 
 fn with_database<T, F>(cfg: &ServerCfg, fun: F) -> Result<T>
@@ -356,12 +355,14 @@ where
     if let Err(e) = res {
         // TODO(TEST): Are these the only errors when the db conn dcs/errs?
         match *e.kind() {
-            ErrorKind::Diesel(
-                result::Error::DatabaseError(result::DatabaseErrorKind::UnableToSendCommand, _),
-            ) |
-            ErrorKind::Diesel(
-                result::Error::DatabaseError(result::DatabaseErrorKind::__Unknown, _),
-            ) => {
+            ErrorKind::Diesel(result::Error::DatabaseError(
+                result::DatabaseErrorKind::UnableToSendCommand,
+                _,
+            ))
+            | ErrorKind::Diesel(result::Error::DatabaseError(
+                result::DatabaseErrorKind::__Unknown,
+                _,
+            )) => {
                 drop(guard);
                 let mut guard = (*DATABASE_CONNS).write();
                 guard.remove(&cfg.address);

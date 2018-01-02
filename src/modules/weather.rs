@@ -94,7 +94,7 @@ pub fn handle(
     let (range, hours, days, location) = {
         // Use last location
         if msg.is_empty() {
-            (0..=0, false, false, {
+            (0..1, false, false, {
                 if let Some(cached) = LOCATION_CACHE
                     .read()
                     .get(&(cfg.address.clone(), nick.to_owned()))
@@ -130,14 +130,14 @@ pub fn handle(
 
             let range = if let Some(d) = captures.name("digits") {
                 let n = d.as_str().parse::<usize>().unwrap();
-                n..=n
+                n..n + 1
             } else if let (Some(x), Some(y)) = (captures.name("range_x"), captures.name("range_y"))
             {
                 let x = x.as_str().parse::<usize>().unwrap();
                 let y = y.as_str().parse::<usize>().unwrap();
-                x..=y
+                x..y + 1
             } else {
-                0..=0
+                0..1
             };
             let h = captures.name("h").is_some() || captures.name("hours").is_some();
             let d = captures.name("d").is_some() || captures.name("days").is_some();
@@ -164,8 +164,10 @@ pub fn handle(
                             if cached_loc.to_lowercase() != new_loc.to_lowercase() {
                                 trace!(log, "Updating Cache/DB");
                                 cache.remove(&(cfg.address.clone(), nick.to_owned()));
-                                cache
-                                    .insert((cfg.address.clone(), nick.to_owned()), new_loc.clone());
+                                cache.insert(
+                                    (cfg.address.clone(), nick.to_owned()),
+                                    new_loc.clone(),
+                                );
                                 drop(cache);
 
                                 super::with_database(cfg, |db| {
@@ -471,10 +473,13 @@ pub fn handle(
                         log,
                         nick,
                         &format!(
-                            "\x02{}: {}\x02 in {} …]; <{}>",
+                            "\x02{}: {}\x02 in {}…]; <{}>",
                             n + 1,
                             a.title,
-                            &a.regions.iter().take(6).fold("[".to_owned(), |acc, reg| acc + reg + ","),
+                            &a.regions
+                                .iter()
+                                .take(6)
+                                .fold("[".to_owned(), |acc, reg| acc + reg + ", "),
                             a.description
                         ),
                     )?;
@@ -505,16 +510,14 @@ pub fn handle(
             data = &res.daily.as_ref().unwrap().data[range.start];
             formatted.push_str(&format!(
                 "Weather in {}d in {} is ",
-                range.start,
-                reverse_location
+                range.start, reverse_location
             ));
             format_data_point(&mut formatted, data);
         } else {
             data = &res.hourly.as_ref().unwrap().data[range.start];
             formatted.push_str(&format!(
                 "Weather in {}h in {} is ",
-                range.start,
-                reverse_location
+                range.start, reverse_location
             ));
             format_data_point(&mut formatted, data);
         }
@@ -524,20 +527,16 @@ pub fn handle(
             data = res.hourly.as_ref().unwrap();
             formatted.push_str(&format!(
                 "Weather in the next {}-{}h in {}: ",
-                range.start,
-                range.end,
-                reverse_location
+                range.start, range.end, reverse_location
             ));
         } else {
             data = res.daily.as_ref().unwrap();
             formatted.push_str(&format!(
                 "Weather in the next {}-{}d in {}: ",
-                range.start,
-                range.end,
-                reverse_location
+                range.start, range.end, reverse_location
             ));
         }
-        for (n, data) in data.data[range.start..=range.end]
+        for (n, data) in data.data[range.start..range.end + 1]
             .into_iter()
             .cloned()
             .enumerate()
