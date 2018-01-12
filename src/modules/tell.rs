@@ -216,8 +216,8 @@ pub fn add(cfg: &ServerCfg, log: &Logger, msg: &Message, private: bool) -> Resul
         };
 
         super::with_database(cfg, |db| {
-            diesel::insert(&pending_tell)
-                .into(schema::pending_tells::table)
+            diesel::insert_into(schema::pending_tells::table)
+                .values(&pending_tell)
                 .execute(db)?;
             Ok(())
         }).and_then(|_| {

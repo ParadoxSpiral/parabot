@@ -44,7 +44,7 @@ extern crate wolfram_alpha;
 #[macro_use]
 extern crate diesel;
 #[macro_use]
-extern crate diesel_codegen;
+extern crate diesel_infer_schema;
 #[macro_use]
 extern crate error_chain;
 #[macro_use]

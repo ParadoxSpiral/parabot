@@ -193,8 +193,8 @@ pub fn handle(
                                 location: &*new_loc,
                             };
                             super::with_database(cfg, |db| {
-                                diesel::insert(&new)
-                                    .into(schema::location_cache::table)
+                                diesel::insert_into(schema::location_cache::table)
+                                    .values(&new)
                                     .execute(db)?;
                                 Ok(())
                             })?;
@@ -346,8 +346,8 @@ pub fn handle(
             reverse_location: &revl.clone(),
         };
         super::with_database(cfg, |db| {
-            diesel::insert(&new)
-                .into(schema::geocode_cache::table)
+            diesel::insert_into(schema::geocode_cache::table)
+                .values(&new)
                 .execute(db)?;
             Ok(())
         })?;
