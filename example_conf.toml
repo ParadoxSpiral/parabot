@@ -15,6 +15,7 @@ owners = ["nick1", "nick2"] # a list of nicks that may exec priviledged cmds
 # optional: max_burst_messages = 4
 # optional: burst_window_length = 8 # Time between bursts in seconds
 # optional: wormy_nick = "nick" # nick of a wormy hivemind bot
+use_ssl = true
 port = 6697
 	[[server.channel]]
 	name = "#parabot_testing"
@@ -30,6 +31,7 @@ port = 6697
 address = "irc.freenode.net"
 nickname = "parabot"
 nickserv_password = "test123"
+use_ssl = true
 port = 6697
 	[[server.channel]]
 	name = "##parabot_testing"

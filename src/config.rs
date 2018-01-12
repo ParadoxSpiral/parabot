@@ -50,6 +50,7 @@ pub struct ServerCfg {
     pub owners: Vec<String>,
     pub wormy_nick: Option<String>,
     #[serde(rename = "channel")] pub channels: Vec<ChannelCfg>,
+    pub use_ssl: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -70,7 +71,7 @@ impl ServerCfg {
             server: Some(self.address.clone()),
             port: Some(self.port),
             password: self.server_password.clone(),
-            use_ssl: Some(true),
+            use_ssl: Some(self.use_ssl),
             channels: Some(self.channels.iter().map(|c| c.name.clone()).collect()),
             channel_keys: {
                 if self.channels.iter().all(|c| c.password.is_none()) {
