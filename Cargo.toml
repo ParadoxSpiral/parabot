@@ -23,8 +23,8 @@ authors = ["ParadoxSpiral <ParadoxSpiral@riseup.net>"]
 
 [dependencies]
 chrono = "0.4"
-chrono-tz = "0.4"
-crossbeam = "0.3"
+chrono-tz = "0.5"
+crossbeam = "0.4"
 ddg = "0.5"
 diesel = "1"
 diesel_infer_schema = { version = "1", features = ["sqlite"] }
@@ -38,9 +38,9 @@ irc = "0.12"
 lazy_static = "1"
 parking_lot = "0.5"
 percent-encoding = "1"
-rand = "0.4"
-rayon = "0.9"
-regex = "0.2"
+rand = "0.5"
+rayon = "1"
+regex = "1"
 reqwest = "0.8"
 serde = "1"
 serde_derive = "1"

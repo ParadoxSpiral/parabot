@@ -31,6 +31,7 @@ port = 6697
 address = "irc.freenode.net"
 nickname = "parabot"
 nickserv_password = "test123"
+database = ".local/share/parabot/parabot.db" # Different servers may populate the same db
 use_ssl = true
 port = 6697
 	[[server.channel]]
