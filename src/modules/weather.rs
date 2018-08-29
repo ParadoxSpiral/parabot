@@ -458,14 +458,9 @@ pub fn handle(
             let adjusted_request_time = utc_now.with_timezone(&timezone) + range_adjustment;
             let mut num = 0;
             for (n, a) in alerts.iter().enumerate() {
-                let mut expired = false;
-                if let Some(expires) = a.expires {
-                    if adjusted_request_time > timezone.timestamp(expires as _, 0) {
-                        expired = true;
-                        trace!(log, "Expired alert");
-                    }
-                }
-                if !expired {
+                if adjusted_request_time > timezone.timestamp(a.expires as _, 0) {
+                    trace!(log, "Expired alert");
+                } else {
                     num += 1;
                     super::send_segmented_message(
                         cfg,

@@ -31,6 +31,7 @@ diesel_infer_schema = { version = "1", features = ["sqlite"] }
 dotenv = "0.10"
 encoding = "0.2"
 error-chain = "0.11"
+forecast = "1"
 html5ever = "0.22"
 humansize = "1"
 irc = "0.12"
@@ -56,10 +57,6 @@ urlshortener = "0.8"
 [dependencies.wolfram_alpha]
 git = "https://github.com/ParadoxSpiral/wolfram-alpha-rs"
 version = "0.4"
-
-[dependencies.forecast]
-git = "https://github.com/ParadoxSpiral/forecast-rs"
-version = "1"
 
 [features]
 default = []
