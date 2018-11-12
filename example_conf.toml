@@ -1,38 +1,36 @@
+database = "/home/USER/.local/share/parabot/parabot.db"
+
 [[server]]
 address = "irc.rizon.net"
-nickname = "parabot"
-# optional: alternative_nicknames = ["weebot"]
-nickserv_password = "test123"
-# optional: server_password = "test123"
-database = ".local/share/parabot/parabot.db" # Different servers may populate the same db
-owners = ["nick1", "nick2"] # a list of nicks that may exec priviledged cmds
-# optional: weather_api_secret = "secret" a https://darksky.net API secret
-# optional: geocoding_api_key = "key" a https://developer.mapquest.com API key
-# optional: wolframalpha_appid = "appid" a https://www.wolframalpha.com/ appid
-# pütional: youtube_api_key = "key" a https://console.developers.google.com api key
-# optional: google_search_id = "id" a http://cse.google.com/all id
-# optional: google_search_key = "key" a https://developers.google.com/custom-search/json-api/v1/introduction key
-# optional: max_burst_messages = 4
-# optional: burst_window_length = 8 # Time between bursts in seconds
-# optional: wormy_nick = "nick" # nick of a wormy hivemind bot
+# optional: password = "test123"
+nick = "parabot"
+nick_password = "test123"
+max_burst_messages = 4
+burst_window_length = 4 # Time between bursts in seconds
 use_ssl = true
 port = 6697
 	[[server.channel]]
 	name = "#parabot_testing"
 	# optional: password = "channel_key"
-	# optional: url_blacklisted_domains = ["google.com"]
-	modules = ["duckduckgo", "google", "jisho", "url-info", "tell", "wolframalpha", "weather",
-			   "wormy", "youtube", "choose"]
-	[[server.channel]]
-	name = "#news"
-	modules = ["url-info", "weather"]
-
-[[server]]
-address = "irc.freenode.net"
-nickname = "parabot"
-nickserv_password = "test123"
-use_ssl = true
-port = 6697
-	[[server.channel]]
-	name = "##parabot_testing"
-	modules = ["url-info"]
+		[[server.channel.module]]
+		name = "dice"
+		triggers = [".roll", "/me rolls", ".dice", ".die"]
+		[[server.channel.module]]
+		name = "choose"
+		triggers = [".choose", ".chose"]
+		[[server.channel.module]]
+		name = "schedule"
+		triggers = [".schedule", ".remind"]
+		[[server.channel.module]]
+		name = "weather"
+		triggers = [".weather"]
+		darksky_secret = "secret" # a https://darksky.net API secret
+		mapquest_key = "key" # a https://developer.mapquest.com API key
+		[[server.channel.module]]
+		name = "url-info"
+		triggers = ["<url>", ".ddg", ".duckduckgo", ".g", ".google", ".s", ".search", ".jisho", ".wa", ".wolframalpha", ".yt", ".youtube"]
+		blacklisted_domains = ["maps.google.com"] # optional
+		# optional: wolframalpha_appid = "appid" a https://www.wolframalpha.com/ appid
+		# optional: youtube_api_key = "key" a https://console.developers.google.com api key
+		# optional: google_search_id = "id" a http://cse.google.com/all id
+		# optional: google_search_key = "key" a https://developers.google.com/custom-search/json-api/v1/introduction key

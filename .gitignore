@@ -1,4 +1,4 @@
 /target/
 /examples/target/
-
-*.bk
+/parabot-core/target/
+/parabot-core/examples/target/

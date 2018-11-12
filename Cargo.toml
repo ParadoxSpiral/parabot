@@ -1,69 +1,12 @@
-# Copyright (C) 2017  ParadoxSpiral
-#
-# This file is part of parabot.
-#
-# Parabot is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# Parabot is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
-
-
 [package]
 name = "parabot"
-version = "0.1.0"
-authors = ["ParadoxSpiral <ParadoxSpiral@riseup.net>"]
+version = "1.0.0"
+authors = ["Jonathan Schleußer <ParadoxSpiral@riseup.net>"]
 
 [dependencies]
-chrono = "0.4"
-chrono-tz = "0.4"
-crossbeam = "0.3"
-ddg = "0.5"
-diesel = "1"
-diesel_infer_schema = { version = "1", features = ["sqlite"] }
-dotenv = "0.10"
-encoding = "0.2"
-error-chain = "0.11"
-html5ever = "0.22"
-humansize = "1"
-irc = "0.12"
-lazy_static = "1"
-parking_lot = "0.5"
-percent-encoding = "1"
-rand = "0.4"
-rayon = "0.9"
-regex = "0.2"
-reqwest = "0.8"
-serde = "1"
-serde_derive = "1"
-serde_json = "1"
-shlex = "0.1"
-slog = { version = "2", features = ["max_level_trace", "release_max_level_info"] }
-slog-async = "2"
-slog-term = "2"
-threadpool = "1"
-toml = "0.4"
-unicode-segmentation = "1"
-urlshortener = "0.8"
-
-[dependencies.wolfram_alpha]
-git = "https://github.com/ParadoxSpiral/wolfram-alpha-rs"
-version = "0.4"
-
-[dependencies.forecast]
-git = "https://github.com/ParadoxSpiral/forecast-rs"
-version = "1"
-
-[features]
-default = []
-show_description = [] # Show the description meta tag in url-info
+parabot-core = {version = "*", path = "parabot-core"}
+shellexpand = "1"
+tokio = "0.1"
 
 [profile.release]
 lto = true
