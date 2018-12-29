@@ -24,8 +24,6 @@ pub enum Error {
     ModuleDuplicate,
     /// A module name could not be resolved to a module
     ModuleNotFound(String),
-    /// A module trigger (aka a required prefix such as [.]weather) occured more than once
-    TriggerDuplicate,
 
     ConfigFormat(::toml::de::Error),
     Sql(::diesel::result::Error),

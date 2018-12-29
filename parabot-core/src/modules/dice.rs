@@ -21,27 +21,33 @@ use rand::distributions::{Distribution, Uniform};
 use rand::thread_rng;
 use regex::Regex;
 
-lazy_static!(
-    // Use a more vague regex (e.g. . instead of \d) to catch & print errors
-    static ref REGEX: Regex = Regex::new(r"(?P<count>.*?)d(?P<sides>[^,\s]*),{0,}\s*").unwrap();
-);
+pub struct Dice {
+    regex: Regex,
+}
 
-pub struct Dice;
+impl Dice {
+    pub fn new() -> Self {
+        Dice {
+            // Use a fairly vague regex (e.g. . instead of \d) to catch & print errors
+            regex: Regex::new(r"(?P<count>.*?)d(?P<sides>[^,\s]*),{0,}\s*").unwrap(),
+        }
+    }
+}
 
 // TODO: Print individual rolls
 module!(Dice, Stage::MessageReceived;
     |_| "'.roll [x]d<n>[, …]': roll 1 or more x (or 1) n sided dice".to_owned();
-    received => |_, _, mctx: &MessageContext, _, msg: &Message, trigger| {
+    received => |state: &mut Self, _, mctx: &MessageContext, _, msg: &Message, trigger| {
         let to_roll = match trigger {
-            Trigger::Key(r) => r,
-            Trigger::Action(_, r) => r,
-            _ => panic!("dice module wrongly configured to be triggered by URLs"),
+            Trigger::Explicit(r) => r,
+            Trigger::Action(r) => r,
+            _ => panic!("dice module's triggers wrongly configured"),
         };
 
         let mut roll = 0;
         let mut err_count = String::new();
         let mut err_sides = String::new();
-        for cap in REGEX.captures_iter(to_roll) {
+        for cap in state.regex.captures_iter(to_roll) {
             let mut c_err = false;
             let count = cap.name("count").unwrap().as_str();
             let count = if count.is_empty() {

@@ -15,13 +15,11 @@
 // You should have received a copy of the GNU General Public License
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
-use super::*;
-use error::*;
-use message::MessageContext;
-
 use irc::client::IrcClient;
 
 use std::sync::Arc;
+
+use {super::*, error::*, message::MessageContext};
 
 #[cfg(feature = "modules")]
 pub use self::choose::Choose;
@@ -32,7 +30,7 @@ pub use self::dice::Dice;
 #[cfg(feature = "modules")]
 pub(crate) fn load_module(cfg: &mut ModuleCfg) -> Result<Option<Box<Module>>> {
     match &*cfg.name {
-        "dice" => Ok(Some(Box::new(Dice))),
+        "dice" => Ok(Some(Box::new(Dice::new()))),
         "choose" => Ok(Some(Box::new(Choose))),
         _ => Ok(None),
     }
@@ -46,7 +44,10 @@ macro_rules! handles {
         if $self.handles($stage) {
             unimplemented!()
         } else {
-            unreachable!()
+            unreachable!(
+                "Modules does not handle {:?} but was configured to do so",
+                $stage
+            )
         }
     };
 }

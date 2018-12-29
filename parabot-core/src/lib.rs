@@ -19,12 +19,12 @@ extern crate chrono;
 extern crate diesel;
 extern crate futures;
 extern crate irc;
-#[macro_use]
-extern crate lazy_static;
+extern crate linkify;
 #[cfg(feature = "modules")]
 extern crate rand;
 #[cfg(feature = "modules")]
 extern crate regex;
+extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate parking_lot;
@@ -75,8 +75,7 @@ pub mod message;
 pub mod modules;
 pub mod prelude {
     pub use super::Builder;
-    pub use config::Config;
-    pub use config::Module as ModuleCfg;
+    pub use config::{Config, Module as ModuleCfg};
     pub use message::{IrcMessageExt, Message, MessageContext, Stage, Trigger};
     pub use modules::{Module, ModuleContext};
 
@@ -88,21 +87,15 @@ pub mod prelude {
 use prelude::*;
 
 use chrono::Utc;
-use diesel::sqlite::SqliteConnection;
-use diesel::Connection;
+use diesel::{sqlite::SqliteConnection, Connection};
 use futures::sync::mpsc;
-use irc::client::ext::ClientExt;
-use irc::client::{Client, IrcClient};
+use irc::client::{ext::ClientExt, Client, IrcClient};
 use parking_lot::Mutex;
-use tokio::prelude::*;
-use tokio::timer::Delay;
+use tokio::{prelude::*, timer::Delay};
 
-use std::collections::HashMap;
-use std::path::Path;
-use std::sync::Arc;
-use std::time::Instant;
+use std::{collections::HashMap, path::Path, sync::Arc, time::Instant};
 
-use error::*;
+use {config::ConfigTrigger, error::*, message::IrcMessageExtInternal};
 
 enum ConfigKind<'p> {
     File(&'p Path),
@@ -161,7 +154,6 @@ impl<'c, 'l> Builder<'c, 'l> {
             Some(ConfigKind::File(p)) => Config::from_path(p)?,
             None => panic!("No config file specified, this is a static programmer error!"),
         };
-        let database = Arc::new(Mutex::new(SqliteConnection::establish(&config.database)?));
 
         #[cfg(not(feature = "modules"))]
         {
@@ -169,6 +161,9 @@ impl<'c, 'l> Builder<'c, 'l> {
                 panic!("No module loader specified, even though default modules disabled");
             }
         }
+
+        // Check/initialize database
+        let database = Arc::new(Mutex::new(SqliteConnection::establish(&config.database)?));
 
         // Setup modules
         let mut all_modules = Vec::with_capacity(config.servers.len());
@@ -251,10 +246,11 @@ impl<'c, 'l> Builder<'c, 'l> {
 
                             tokio::spawn(client.stream().map_err(|e| panic!("{}", e)).for_each(
                                 move |msg| {
-                                    let received = Instant::now();
-                                    match msg.trigger_match(&[".help"]) {
+                                    match msg.cfg_trigger_match(&[ConfigTrigger::Explicit(
+                                        ".help".to_string(),
+                                    )]) {
                                         // .help with no modules specified
-                                        Some(Trigger::Key("")) => {
+                                        Some(Trigger::Explicit("")) => {
                                             let mut res = String::new();
                                             for (_, name) in modules.keys() {
                                                 if res.is_empty() {
@@ -267,17 +263,23 @@ impl<'c, 'l> Builder<'c, 'l> {
                                             reply_priv!(mctx, msg, "Modules: {}", res);
                                         }
                                         // Other .help
-                                        Some(Trigger::Key(alias)) => {
-                                            for (_, (_, ref mut module)) in
-                                                modules.iter_mut().filter(|(_, (cfg, _))| {
+                                        Some(trigger) => {
+                                            if let Some((_, (_, ref mut module))) =
+                                                modules.iter_mut().find(|(_, (cfg, _))| {
                                                     cfg.triggers
-                                                        .as_ref()
-                                                        .map(|ts| {
-                                                            ts.iter().any(|t| t.ends_with(alias))
-                                                        })
-                                                        .unwrap_or(false)
-                                                }) {
+                                                        .iter()
+                                                        .find(|t| t.help_relevant(&trigger))
+                                                        .is_some()
+                                                })
+                                            {
                                                 reply_priv!(mctx, msg, "{}", module.help());
+                                            } else {
+                                                reply_priv!(
+                                                    mctx,
+                                                    msg,
+                                                    "{}",
+                                                    "No module with that alias found"
+                                                )
                                             }
                                         }
                                         // Regular message
@@ -285,24 +287,19 @@ impl<'c, 'l> Builder<'c, 'l> {
                                             for (_, (ref mut cfg, ref mut module)) in
                                                 modules.iter_mut().filter(|(_, (_, m))| {
                                                     m.handles(Stage::MessageReceived)
-                                                }) {
-                                                if let Some(trig) = if cfg.triggers_always {
-                                                    Some(Trigger::Always)
-                                                } else {
-                                                    cfg.triggers
-                                                        .as_ref()
-                                                        .and_then(|ts| msg.trigger_match(&*ts))
-                                                        .map(|t| t)
-                                                } {
+                                                })
+                                            {
+                                                if let Some(t) =
+                                                    msg.cfg_trigger_match(&cfg.triggers)
+                                                {
                                                     module.message_received(
-                                                        &client, &mctx, cfg, &msg, trig,
-                                                    )
+                                                        &client, &mctx, cfg, &msg, t,
+                                                    );
                                                 }
                                             }
                                         }
                                     }
 
-                                    println!("Received: {:?}", Instant::now() - received);
                                     Ok(())
                                 },
                             ));

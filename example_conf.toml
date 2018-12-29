@@ -12,25 +12,45 @@ port = 6697
 	[[server.channel]]
 	name = "#parabot_testing"
 	# optional: password = "channel_key"
-		[[server.channel.module]]
-		name = "dice"
-		triggers = [".roll", "/me rolls", ".dice", ".die"]
+		# Possible module triggers: <ALWAYS>, .explicit, <ACTION name>, <DOMAINS "domain1.com","domain2.com",!"dom3.com">, <COMMAND JOIN>, <COMMAND PART>
 		[[server.channel.module]]
 		name = "choose"
 		triggers = [".choose", ".chose"]
+
 		[[server.channel.module]]
-		name = "schedule"
-		triggers = [".schedule", ".remind"]
+		name = "dice"
+		triggers = [".roll", "<ACTION rolls>", ".dice"]
+
+		[[server.channel.module]]
+		name = "duckduckgo"
+		triggers = [".ddg", ".duckduckgo", "<DOMAINS 'duckduckgo.com'>"]
+
+		[[server.channel.module]]
+		name = "generic-url"
+		triggers = ["<DOMAINS !'duckduckgo.com',!'google.com',!'maps.google.com',!'jisho.org',!'wolframalpha.com',!'youtube.com',!'youtu.be'>"]
+
+		[[server.channel.module]]
+		name = "google"
+		search_id = "id" # a http://cse.google.com/all id
+		search_key = "key" # a https://developers.google.com/custom-search/json-api/v1/introduction key
+		triggers = [".g", ".google", "<DOMAINS 'google.com'>"]
+
+		[[server.channel.module]]
+		name = "jisho"
+		triggers = [".jisho", "<DOMAINS 'jisho.org'>"]
+
 		[[server.channel.module]]
 		name = "weather"
-		triggers = [".weather"]
 		darksky_secret = "secret" # a https://darksky.net API secret
 		mapquest_key = "key" # a https://developer.mapquest.com API key
+		triggers = [".weather"]
+
 		[[server.channel.module]]
-		name = "url-info"
-		triggers = ["<url>", ".ddg", ".duckduckgo", ".g", ".google", ".s", ".search", ".jisho", ".wa", ".wolframalpha", ".yt", ".youtube"]
-		blacklisted_domains = ["maps.google.com"] # optional
-		# optional: wolframalpha_appid = "appid" a https://www.wolframalpha.com/ appid
-		# optional: youtube_api_key = "key" a https://console.developers.google.com api key
-		# optional: google_search_id = "id" a http://cse.google.com/all id
-		# optional: google_search_key = "key" a https://developers.google.com/custom-search/json-api/v1/introduction key
+		name = "wolfram-alpha"
+		appid = "appid" # a https://www.wolframalpha.com/ appid
+		triggers = [".wa", "<DOMAINS 'wolframalpha.com'>"]
+
+		[[server.channel.module]]
+		name = "youtube"
+		api_key = "key" # a https://console.developers.google.com api key
+		triggers = ["<DOMAINS 'youtube.com','youtu.be'>"]

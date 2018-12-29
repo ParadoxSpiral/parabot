@@ -15,13 +15,16 @@
 // You should have received a copy of the GNU General Public License
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
-use irc::client::data::config::Config as IrcConfig;
-use toml::{de, Value};
+use irc::{client::data::config::Config as IrcConfig, proto::Command};
+use serde::{
+    de::{self, Deserialize, Unexpected, Visitor},
+    Deserializer,
+};
+use toml::Value;
 
-use super::error::*;
-use std::collections::HashMap;
-use std::io::Read;
-use std::path::Path;
+use std::{collections::HashMap, io::Read, mem, path::Path};
+
+use {error::*, message::Trigger};
 
 #[derive(Deserialize, Debug)]
 pub struct Config {
@@ -37,9 +40,9 @@ impl Config {
         let mut file = ::std::fs::File::open(path)?;
         let mut s = String::new();
         file.read_to_string(&mut s)?;
-        let mut toml: Config = de::from_str(&s)?;
+        let mut toml: Config = toml::de::from_str(&s)?;
 
-        // Test if all modules have unique names, and unique triggers respectively
+        // Test if all modules have unique names
         if toml.servers.iter_mut().any(|s| {
             s.channels.iter_mut().any(|c| {
                 let n = c.modules.len();
@@ -51,22 +54,6 @@ impl Config {
             })
         }) {
             Err(Error::ModuleDuplicate)
-        } else if toml.servers.iter().any(|s| {
-            s.channels.iter().any(|c| {
-                let mut triggers = vec![];
-                c.modules
-                    .iter()
-                    .map(|m| triggers.extend(&m.triggers))
-                    .count();
-                let l = triggers.len();
-
-                triggers.sort_unstable();
-                triggers.dedup();
-
-                l != triggers.len()
-            })
-        }) {
-            Err(Error::TriggerDuplicate)
         } else {
             Ok(toml)
         }
@@ -100,20 +87,104 @@ pub struct Channel {
 #[derive(Clone, Deserialize, Debug)]
 pub struct Module {
     pub name: String,
-    pub triggers: Option<Vec<String>>,
-    #[serde(default = "default_triggers_always")]
-    pub triggers_always: bool,
+    pub(crate) triggers: Vec<ConfigTrigger>,
 
     #[serde(flatten)]
     pub fields: HashMap<String, Value>,
 }
 
-fn default_triggers_always() -> bool {
-    false
+#[derive(Debug, Clone, PartialEq)]
+// This type needs to be different from Trigger, because the formats are very different
+pub(crate) enum ConfigTrigger {
+    Always,
+    Command(Command),
+    Explicit(String),
+    Action(String),
+    // matched, ignored
+    Domains(Vec<String>, Vec<String>),
+}
+
+impl ConfigTrigger {
+    pub(crate) fn help_relevant(&self, other: &Trigger) -> bool {
+        match (self, other) {
+            (ConfigTrigger::Always, Trigger::Always(_)) => true,
+            // This returns true if the commands are of the same enum variant
+            (ConfigTrigger::Command(c1), Trigger::Command(c2)) => {
+                mem::discriminant(&c1) == mem::discriminant(&c2)
+            }
+            (ConfigTrigger::Explicit(a), Trigger::Explicit(b)) if &a[1..] == *b => true,
+            (ConfigTrigger::Action(a), Trigger::Action(b)) if &a[3..] == *b => true,
+            // FIXME: .contains fails to resolve for some reason…
+            (ConfigTrigger::Domains(m, i), Trigger::Urls(b)) => b
+                .iter()
+                .all(|b| m.iter().any(|m| m == b) && !i.iter().any(|i| i == b)),
+            _ => false,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ConfigTrigger {
+    fn deserialize<D>(de: D) -> ::std::result::Result<ConfigTrigger, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        de.deserialize_str(TriggerVisitor)
+    }
+}
+
+struct TriggerVisitor;
+
+impl<'de> Visitor<'de> for TriggerVisitor {
+    type Value = ConfigTrigger;
+
+    fn expecting(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+        write!(formatter, "a trigger in the form of one of: .trigger, <ALWAYS>, <ACTION name>, <DOMAINS \"one.com\",\"two.com\",!\"ignorethis.com\">, <COMMAND JOIN> <COMMAND PART>")
+    }
+
+    fn visit_str<E>(self, s: &str) -> ::std::result::Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        if (&s).chars().next() == Some('.') {
+            Ok(ConfigTrigger::Explicit(s.to_lowercase()))
+        } else if (&s).chars().next() == Some('<') && (&s).chars().last() == Some('>') {
+            let s = s.to_lowercase();
+            if s == "<always>" {
+                Ok(ConfigTrigger::Always)
+            } else if s.starts_with("<action ") {
+                Ok(ConfigTrigger::Action(s[8..s.len() - 1].to_string()))
+            } else if s.starts_with("<command ") {
+                let name = &s[9..s.len() - 1];
+                Ok(ConfigTrigger::Command(unimplemented!()))
+            } else if s.starts_with("<domains ") {
+                let (mut allowed, mut ignored) = (vec![], vec![]);
+                for dom in &mut (&s[9..s.len() - 1]).split(',') {
+                    let ignore = dom.starts_with('!');
+                    if !dom.starts_with("http") || !dom.starts_with("!http") {
+                        if ignore {
+                            ignored.push(format!("https://{}", &dom[1..]));
+                        } else {
+                            allowed.push(format!("https://{}", dom));
+                        }
+                    } else {
+                        if ignore {
+                            ignored.push(dom[1..].to_string());
+                        } else {
+                            allowed.push(dom.to_string());
+                        }
+                    }
+                }
+                Ok(ConfigTrigger::Domains(allowed, ignored))
+            } else {
+                Err(de::Error::invalid_value(Unexpected::Str(&s), &self))
+            }
+        } else {
+            Err(de::Error::invalid_value(Unexpected::Str(&s), &self))
+        }
+    }
 }
 
 impl Server {
-    #[inline]
     pub(crate) fn as_irc_config(&self) -> IrcConfig {
         IrcConfig {
             server: Some(self.address.clone()),

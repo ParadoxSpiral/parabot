@@ -15,20 +15,20 @@
 // You should have received a copy of the GNU General Public License
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
-use prelude::*;
-
-use rand::{thread_rng, Rng};
+use rand::{seq::SliceRandom, thread_rng};
 use shlex;
+
+use prelude::*;
 
 pub struct Choose;
 
 module!(Choose, Stage::MessageReceived;
     |_| ".choose \"one\" option\\ of 'some'".to_owned();
     received => |_, _, mctx: &MessageContext, _, msg: &Message, trigger| {
-        if let Trigger::Key(opts) = trigger {
-            reply!(mctx, msg, "{}", thread_rng().choose(&shlex::split(opts).unwrap()).unwrap())
+        if let Trigger::Explicit(opts) = trigger {
+            reply!(mctx, msg, "{}", &shlex::split(opts).unwrap().choose(&mut thread_rng()).unwrap())
         } else {
-            panic!("choose module wrongly configured to be triggered by URLs|ACTIONs")
+            panic!("choose module's triggers wrongly configured")
         }
     };
 );
