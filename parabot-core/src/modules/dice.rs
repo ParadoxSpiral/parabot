@@ -15,11 +15,11 @@
 // You should have received a copy of the GNU General Public License
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
-use prelude::*;
-
 use rand::distributions::{Distribution, Uniform};
 use rand::thread_rng;
 use regex::Regex;
+
+use crate::*;
 
 pub struct Dice {
     regex: Regex,

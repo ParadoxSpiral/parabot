@@ -1,7 +1,3 @@
-extern crate parabot_core;
-extern crate shellexpand;
-extern crate tokio;
-
 use parabot_core::prelude::*;
 use tokio::prelude::*;
 use tokio::runtime::Runtime;

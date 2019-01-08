@@ -2,7 +2,7 @@
 Yet another modular irc bot (framework)
 
 # Requirements
-- Rust >= 1.26
+- Rust >= 1.31
 - pkg-config
 - OpenSSL
 - SQLite 3

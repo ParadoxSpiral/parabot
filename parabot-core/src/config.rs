@@ -17,14 +17,15 @@
 
 use irc::{client::data::config::Config as IrcConfig, proto::Command};
 use serde::{
-    de::{self, Deserialize, Unexpected, Visitor},
+    de::{self, Unexpected, Visitor},
     Deserializer,
+    Deserialize,
 };
 use toml::Value;
 
 use std::{collections::HashMap, io::Read, mem, path::Path};
 
-use {error::*, message::Trigger};
+use crate::{error::*, message::Trigger};
 
 #[derive(Deserialize, Debug)]
 pub struct Config {

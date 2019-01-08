@@ -15,24 +15,12 @@
 // You should have received a copy of the GNU General Public License
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
-extern crate chrono;
-extern crate diesel;
-extern crate futures;
-extern crate irc;
-extern crate linkify;
 #[cfg(feature = "modules")]
 extern crate rand;
 #[cfg(feature = "modules")]
 extern crate regex;
-extern crate serde;
-#[macro_use]
-extern crate serde_derive;
-extern crate parking_lot;
 #[cfg(feature = "modules")]
 extern crate shlex;
-extern crate tokio;
-extern crate toml;
-extern crate unicode_segmentation;
 
 // FIXME: These should be in message, but fucking macro ordering
 #[macro_export]
@@ -74,17 +62,15 @@ pub mod error;
 pub mod message;
 pub mod modules;
 pub mod prelude {
-    pub use super::Builder;
-    pub use config::{Config, Module as ModuleCfg};
-    pub use message::{IrcMessageExt, Message, MessageContext, Stage, Trigger};
-    pub use modules::{Module, ModuleContext};
-
+    pub use crate::{
+        config::{Config, Module as ModuleCfg},
+        message::{IrcMessageExt, Message, MessageContext, Stage, Trigger},
+        modules::{Module, ModuleContext},
+        Builder,
+    };
     pub use irc::client::IrcClient;
-
     pub use std::sync::Arc;
 }
-
-use prelude::*;
 
 use chrono::Utc;
 use diesel::{sqlite::SqliteConnection, Connection};
@@ -95,7 +81,7 @@ use tokio::{prelude::*, timer::Delay};
 
 use std::{collections::HashMap, path::Path, sync::Arc, time::Instant};
 
-use {config::ConfigTrigger, error::*, message::IrcMessageExtInternal};
+use crate::{config::ConfigTrigger, error::*, message::IrcMessageExtInternal, prelude::*};
 
 enum ConfigKind<'p> {
     File(&'p Path),

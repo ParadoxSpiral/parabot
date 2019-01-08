@@ -19,7 +19,7 @@ use irc::client::IrcClient;
 
 use std::sync::Arc;
 
-use {super::*, error::*, message::MessageContext};
+use crate::{error::*, message::MessageContext, *};
 
 #[cfg(feature = "modules")]
 pub use self::choose::Choose;
@@ -53,36 +53,47 @@ macro_rules! handles {
 }
 
 pub trait Module: Send {
-    fn handles(&self, Stage) -> bool;
+    fn handles(&self, _stage: Stage) -> bool;
     fn help<'t>(&self) -> String;
 
     #[inline]
-    fn connected(&mut self, &Arc<IrcClient>, &MessageContext, &mut ModuleCfg) {
+    fn connected(
+        &mut self,
+        _client: &Arc<IrcClient>,
+        _mctx: &MessageContext,
+        _cfg: &mut ModuleCfg,
+    ) {
         handles!(self, Stage::Connected)
     }
     #[inline]
     fn message_received<'m>(
         &mut self,
-        &Arc<IrcClient>,
-        &MessageContext,
-        &mut ModuleCfg,
-        &'m Message,
-        Trigger<'m>,
+        _client: &Arc<IrcClient>,
+        _mctx: &MessageContext,
+        _cfg: &mut ModuleCfg,
+        _msg: &'m Message,
+        _trigger: Trigger<'m>,
     ) {
         handles!(self, Stage::MessageReceived)
     }
     #[inline]
     fn pre_message_send(
         &mut self,
-        &Arc<IrcClient>,
-        &MessageContext,
-        &mut ModuleCfg,
-        &Message,
+        _client: &Arc<IrcClient>,
+        _mctx: &MessageContext,
+        _cfg: &mut ModuleCfg,
+        _msg: &Message,
     ) -> bool {
         handles!(self, Stage::PreMessageSend)
     }
     #[inline]
-    fn post_message_send(&mut self, &Arc<IrcClient>, &MessageContext, &mut ModuleCfg, &Message) {
+    fn post_message_send(
+        &mut self,
+        _client: &Arc<IrcClient>,
+        _mctx: &MessageContext,
+        _cfg: &mut ModuleCfg,
+        _msg: &Message,
+    ) {
         handles!(self, Stage::PostMessageSend)
     }
 }
@@ -105,26 +116,26 @@ macro_rules! module {
 
             $(
             #[inline]
-            fn connected(&mut self, c: &Arc<IrcClient>, msgs: &MessageContext, cfg: &mut ModuleCfg) {
-                $connected(self, c, msgs, cfg)
+            fn connected(&mut self, client: &Arc<IrcClient>, mctx: &MessageContext, cfg: &mut ModuleCfg) {
+                $connected(self, client, mctx, cfg)
             })*
 
             $(
             #[inline]
-            fn message_received<'m>(&mut self, c: &Arc<IrcClient>, msgs: &MessageContext, cfg: &mut ModuleCfg, msg: &'m Message, trigger: Trigger<'m>) {
-                $received(self, c, msgs, cfg, msg, trigger)
+            fn message_received<'m>(&mut self, client: &Arc<IrcClient>, mctx: &MessageContext, cfg: &mut ModuleCfg, msg: &'m Message, trigger: Trigger<'m>) {
+                $received(self, client, mctx, cfg, msg, trigger)
             })*
 
             $(
             #[inline]
-            fn pre_message_send(&mut self, c: &Arc<IrcClient>, msgs: &MessageContext, cfg: &mut ModuleCfg, msg: &Message) -> bool {
-                $pre_message(self, c, msgs, cfg, msg)
+            fn pre_message_send(&mut self, client: &Arc<IrcClient>, mctx: &MessageContext, cfg: &mut ModuleCfg, msg: &Message) -> bool {
+                $pre_message(self, client, mctx, cfg, msg)
             })*
 
             $(
             #[inline]
-            fn post_message_send(&mut self, &Arc<IrcClient>, msgs: &MessageContext, cfg: &mut ModuleCfg, msg: &Message) {
-                $post_message(self, c, msgs, cfg, msg)
+            fn post_message_send(&mut self, client: &Arc<IrcClient>, mctx: &MessageContext, cfg: &mut ModuleCfg, msg: &Message) {
+                $post_message(self, client, mctx, cfg, msg)
             })*
         }
     }

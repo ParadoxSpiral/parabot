@@ -18,7 +18,7 @@
 use rand::{seq::SliceRandom, thread_rng};
 use shlex;
 
-use prelude::*;
+use crate::*;
 
 pub struct Choose;
 

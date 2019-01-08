@@ -27,7 +27,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use std::{mem, sync::Arc};
 
-use config::ConfigTrigger;
+use crate::config::ConfigTrigger;
 
 pub type MessageContext = Arc<mpsc::UnboundedSender<(Message, DueBy, SendMode)>>;
 
