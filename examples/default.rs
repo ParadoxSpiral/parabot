@@ -1,4 +1,4 @@
-use parabot_core::prelude::*;
+use parabot::prelude::*;
 use tokio::prelude::*;
 use tokio::runtime::Runtime;
 

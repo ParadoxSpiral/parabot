@@ -19,7 +19,7 @@ use rand::distributions::{Distribution, Uniform};
 use rand::thread_rng;
 use regex::Regex;
 
-use crate::*;
+use crate::prelude::*;
 
 pub struct Dice {
     regex: Regex,

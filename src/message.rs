@@ -212,7 +212,6 @@ pub enum ControlCode {
     Reverse = 0x16,
 }
 
-// TODO: This needs to be made async
 #[inline]
 pub(crate) fn send(ctx: &IrcClient, msg: &Message, mode: &SendMode) {
     let (msg_limit, msg_bytes, target, msg) =

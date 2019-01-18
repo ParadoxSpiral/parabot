@@ -1,5 +1,2 @@
+Cargo.lock
 /target/
-/examples/target/
-/parabot-core/Cargo.lock
-/parabot-core/target/
-/parabot-core/examples/target/
