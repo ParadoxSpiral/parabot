@@ -20,15 +20,31 @@ use shlex;
 
 use crate::prelude::*;
 
+#[derive(Module)]
+#[module(help = ".choose \"one\" option\\ of 'some'", received(handle_received))]
 pub struct Choose;
 
-module!(Choose, Stage::MessageReceived;
-    |_| ".choose \"one\" option\\ of 'some'".to_owned();
-    received => |_, _, mctx: &MessageContext, _, msg: &Message, trigger| {
+impl Choose {
+    fn handle_received(
+        &mut self,
+        _: &Arc<IrcClient>,
+        mctx: &MessageContext,
+        _: &mut ModuleCfg,
+        msg: &Message,
+        trigger: Trigger,
+    ) {
         if let Trigger::Explicit(opts) = trigger {
-            reply!(mctx, msg, "{}", &shlex::split(opts).unwrap().choose(&mut thread_rng()).unwrap())
+            reply!(
+                mctx,
+                msg,
+                "{}",
+                &shlex::split(opts)
+                    .unwrap()
+                    .choose(&mut thread_rng())
+                    .unwrap()
+            )
         } else {
             panic!("choose module's triggers wrongly configured")
         }
-    };
-);
+    }
+}

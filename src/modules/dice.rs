@@ -21,6 +21,11 @@ use regex::Regex;
 
 use crate::prelude::*;
 
+#[derive(Module)]
+#[module(
+    help = "'.roll [x]d<n>[, …]': roll 1 or more x (or 1) n sided dice",
+    received(handle_received)
+)]
 pub struct Dice {
     regex: Regex,
 }
@@ -32,12 +37,15 @@ impl Dice {
             regex: Regex::new(r"(?P<count>.*?)d(?P<sides>[^,\s]*),{0,}\s*").unwrap(),
         }
     }
-}
 
-// TODO: Print individual rolls
-module!(Dice, Stage::MessageReceived;
-    |_| "'.roll [x]d<n>[, …]': roll 1 or more x (or 1) n sided dice".to_owned();
-    received => |state: &mut Self, _, mctx: &MessageContext, _, msg: &Message, trigger| {
+    fn handle_received(
+        &mut self,
+        _: &Arc<IrcClient>,
+        mctx: &MessageContext,
+        _: &mut ModuleCfg,
+        msg: &Message,
+        trigger: Trigger,
+    ) {
         let to_roll = match trigger {
             Trigger::Explicit(r) => r,
             Trigger::Action(r) => r,
@@ -47,7 +55,7 @@ module!(Dice, Stage::MessageReceived;
         let mut roll = 0;
         let mut err_count = String::new();
         let mut err_sides = String::new();
-        for cap in state.regex.captures_iter(to_roll) {
+        for cap in self.regex.captures_iter(to_roll) {
             let mut c_err = false;
             let count = cap.name("count").unwrap().as_str();
             let count = if count.is_empty() {
@@ -63,7 +71,7 @@ module!(Dice, Stage::MessageReceived;
                         }
                         c_err = true;
                         0
-                    },
+                    }
                 }
             };
             let sides = cap.name("sides").unwrap().as_str();
@@ -76,7 +84,7 @@ module!(Dice, Stage::MessageReceived;
                         err_sides += &*format!(", `{}`", sides);
                     }
                     continue;
-                },
+                }
             };
             if c_err {
                 continue;
@@ -88,7 +96,7 @@ module!(Dice, Stage::MessageReceived;
                     roll += sampler.sample(&mut thread_rng());
                 }
             }
-        };
+        }
 
         let mut err = String::new();
         if !err_count.is_empty() {
@@ -107,5 +115,5 @@ module!(Dice, Stage::MessageReceived;
         } else {
             reply!(mctx, msg, "{}", err);
         }
-    };
-);
+    }
+}

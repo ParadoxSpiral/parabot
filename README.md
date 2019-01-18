@@ -8,7 +8,7 @@ Yet another modular irc bot (framework)
 - SQLite 3
 
 # Usage
-Clone, and compile with `cargo build --release`. The resulting binary is in `target/release/parabot`.
+Run the default modules with `cargo run --release --example default`.
 A configuration file (see example\_conf.toml) is expected at either `$XDG_CONFIG_HOME`|`~/.config``/parabot/conf.toml`.
 
 # Modules

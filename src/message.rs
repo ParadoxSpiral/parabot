@@ -37,9 +37,9 @@ const MAX_PRIVMSG_LEN: usize = 510 - 9;
 /// The stages, or points in time, at which a module can be called
 pub enum Stage {
     Connected,
-    MessageReceived,
-    PreMessageSend,
-    PostMessageSend,
+    Received,
+    PreSend,
+    PostSend,
 }
 
 #[derive(Debug, Clone)]

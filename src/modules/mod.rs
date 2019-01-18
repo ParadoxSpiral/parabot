@@ -22,6 +22,11 @@ use std::sync::Arc;
 use crate::{error::*, message::MessageContext, *};
 
 #[cfg(feature = "modules")]
+mod choose;
+#[cfg(feature = "modules")]
+mod dice;
+
+#[cfg(feature = "modules")]
 pub use self::choose::Choose;
 #[cfg(feature = "modules")]
 pub use self::dice::Dice;
@@ -39,22 +44,9 @@ pub(crate) fn load_module(cfg: &mut ModuleCfg) -> Result<Option<Box<Module>>> {
 /// Key: Channel name, module name. Value: Module configuration, Module pointer
 pub type ModuleContext = HashMap<(String, String), (ModuleCfg, Box<Module>)>;
 
-macro_rules! handles {
-    ($self:ident, $stage:path) => {
-        if $self.handles($stage) {
-            unimplemented!()
-        } else {
-            unreachable!(
-                "Modules does not handle {:?} but was configured to do so",
-                $stage
-            )
-        }
-    };
-}
-
 pub trait Module: Send {
     fn handles(&self, _stage: Stage) -> bool;
-    fn help(&self) -> String;
+    fn help(&self) -> &'static str;
 
     #[inline]
     fn connected(
@@ -63,10 +55,10 @@ pub trait Module: Send {
         _mctx: &MessageContext,
         _cfg: &mut ModuleCfg,
     ) {
-        handles!(self, Stage::Connected)
+        unreachable!()
     }
     #[inline]
-    fn message_received<'m>(
+    fn received<'m>(
         &mut self,
         _client: &Arc<IrcClient>,
         _mctx: &MessageContext,
@@ -74,75 +66,26 @@ pub trait Module: Send {
         _msg: &'m Message,
         _trigger: Trigger<'m>,
     ) {
-        handles!(self, Stage::MessageReceived)
+        unreachable!()
     }
     #[inline]
-    fn pre_message_send(
+    fn pre_send(
         &mut self,
         _client: &Arc<IrcClient>,
         _mctx: &MessageContext,
         _cfg: &mut ModuleCfg,
         _msg: &Message,
     ) -> bool {
-        handles!(self, Stage::PreMessageSend)
+        unreachable!()
     }
     #[inline]
-    fn post_message_send(
+    fn post_send(
         &mut self,
         _client: &Arc<IrcClient>,
         _mctx: &MessageContext,
         _cfg: &mut ModuleCfg,
         _msg: &Message,
     ) {
-        handles!(self, Stage::PostMessageSend)
+        unreachable!()
     }
 }
-
-#[macro_export]
-macro_rules! module {
-    ( $mod:path, $( $stage:path ),+; $help:expr; $(connected => $connected:expr;)* $(received => $received:expr;)* $(pre_message => $pre_message:expr;)* $(post_message => $post_message:expr;)*) => {
-        impl Module for $mod {
-            #[inline]
-            fn handles(&self, stage: Stage) -> bool {
-                match stage {
-                    $($stage)|+ => true,
-                    _ => false,
-                }
-            }
-            #[inline]
-            fn help(&self) -> String {
-                $help(self)
-            }
-
-            $(
-            #[inline]
-            fn connected(&mut self, client: &Arc<IrcClient>, mctx: &MessageContext, cfg: &mut ModuleCfg) {
-                $connected(self, client, mctx, cfg)
-            })*
-
-            $(
-            #[inline]
-            fn message_received<'m>(&mut self, client: &Arc<IrcClient>, mctx: &MessageContext, cfg: &mut ModuleCfg, msg: &'m Message, trigger: Trigger<'m>) {
-                $received(self, client, mctx, cfg, msg, trigger)
-            })*
-
-            $(
-            #[inline]
-            fn pre_message_send(&mut self, client: &Arc<IrcClient>, mctx: &MessageContext, cfg: &mut ModuleCfg, msg: &Message) -> bool {
-                $pre_message(self, client, mctx, cfg, msg)
-            })*
-
-            $(
-            #[inline]
-            fn post_message_send(&mut self, client: &Arc<IrcClient>, mctx: &MessageContext, cfg: &mut ModuleCfg, msg: &Message) {
-                $post_message(self, client, mctx, cfg, msg)
-            })*
-        }
-    }
-}
-
-// FIXME: These need to be below here because >fucking macro ordering
-#[cfg(feature = "modules")]
-mod choose;
-#[cfg(feature = "modules")]
-mod dice;

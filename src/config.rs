@@ -18,8 +18,7 @@
 use irc::client::data::config::Config as IrcConfig;
 use serde::{
     de::{self, Unexpected, Visitor},
-    Deserializer,
-    Deserialize,
+    Deserialize, Deserializer,
 };
 use toml::Value;
 

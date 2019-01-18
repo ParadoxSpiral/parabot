@@ -69,6 +69,7 @@ pub mod prelude {
         Builder,
     };
     pub use irc::client::IrcClient;
+    pub use parabot_derive::Module;
     pub use std::sync::Arc;
 }
 
@@ -271,10 +272,10 @@ impl<'c, 'l> Builder<'c, 'l> {
                                 _ => {
                                     for (_, (ref mut cfg, ref mut module)) in modules
                                         .iter_mut()
-                                        .filter(|(_, (_, m))| m.handles(Stage::MessageReceived))
+                                        .filter(|(_, (_, m))| m.handles(Stage::Received))
                                     {
                                         if let Some(t) = msg.cfg_trigger_match(&cfg.triggers) {
-                                            module.message_received(&client, &mctx, cfg, &msg, t);
+                                            module.received(&client, &mctx, cfg, &msg, t);
                                         }
                                     }
                                 }
