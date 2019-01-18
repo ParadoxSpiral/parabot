@@ -25,7 +25,7 @@ use irc::{
 use linkify::{LinkFinder, LinkKind};
 use unicode_segmentation::UnicodeSegmentation;
 
-use std::{mem, sync::Arc};
+use std::sync::Arc;
 
 use crate::config::ConfigTrigger;
 
@@ -148,7 +148,13 @@ impl IrcMessageExtInternal for Message {
                     }
                 }
                 ConfigTrigger::Command(cmd) => {
-                    if mem::discriminant(cmd) == mem::discriminant(&self.command) {
+                    if cmd
+                        == &*String::from(&self.command)
+                            .split(' ')
+                            .next()
+                            .unwrap()
+                            .to_lowercase()
+                    {
                         return Some(Trigger::Command(&self.command));
                     }
                 }

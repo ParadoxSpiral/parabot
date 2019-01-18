@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
-use irc::{client::data::config::Config as IrcConfig, proto::Command};
+use irc::client::data::config::Config as IrcConfig;
 use serde::{
     de::{self, Unexpected, Visitor},
     Deserializer,
@@ -23,7 +23,7 @@ use serde::{
 };
 use toml::Value;
 
-use std::{collections::HashMap, io::Read, mem, path::Path};
+use std::{collections::HashMap, io::Read, path::Path};
 
 use crate::{error::*, message::Trigger};
 
@@ -98,7 +98,7 @@ pub struct Module {
 // This type needs to be different from Trigger, because the formats are very different
 pub(crate) enum ConfigTrigger {
     Always,
-    Command(Command),
+    Command(String),
     Explicit(String),
     Action(String),
     // matched, ignored
@@ -111,7 +111,7 @@ impl ConfigTrigger {
             (ConfigTrigger::Always, Trigger::Always(_)) => true,
             // This returns true if the commands are of the same enum variant
             (ConfigTrigger::Command(c1), Trigger::Command(c2)) => {
-                mem::discriminant(&c1) == mem::discriminant(&c2)
+                c1 == &*String::from(*c2).split(' ').next().unwrap().to_lowercase()
             }
             (ConfigTrigger::Explicit(a), Trigger::Explicit(b)) if &a[1..] == *b => true,
             (ConfigTrigger::Action(a), Trigger::Action(b)) if &a[3..] == *b => true,
@@ -155,8 +155,8 @@ impl<'de> Visitor<'de> for TriggerVisitor {
             } else if s.starts_with("<action ") {
                 Ok(ConfigTrigger::Action(s[8..s.len() - 1].to_string()))
             } else if s.starts_with("<command ") {
-                let name = &s[9..s.len() - 1];
-                Ok(ConfigTrigger::Command(unimplemented!()))
+                // TODO: Sanitize name
+                Ok(ConfigTrigger::Command(s[9..s.len() - 1].to_string()))
             } else if s.starts_with("<domains ") {
                 let (mut allowed, mut ignored) = (vec![], vec![]);
                 for dom in &mut (&s[9..s.len() - 1]).split(',') {
