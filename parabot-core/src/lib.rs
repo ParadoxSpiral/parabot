@@ -134,7 +134,7 @@ impl<'c, 'l> Builder<'c, 'l> {
     /// #Panics
     /// * No config file was provided
     /// * Default modules were disabled, and no module loader was specified
-    pub fn build(self) -> Result<impl Future<Item = (), Error = ()>> {
+    pub fn build(self) -> Result<Vec<impl Future<Item = (), Error = ()>>> {
         let mut config = match self.config {
             Some(ConfigKind::Parsed(c)) => c,
             Some(ConfigKind::File(p)) => Config::from_path(p)?,
@@ -179,120 +179,115 @@ impl<'c, 'l> Builder<'c, 'l> {
             all_modules.push(modules);
         }
 
-        Ok(future::lazy(move || {
-            for (server, mut modules) in config.servers.into_iter().zip(all_modules.into_iter()) {
-                let db = Arc::clone(&database);
-                tokio::spawn(
-                    IrcClient::new_future(server.as_irc_config())
-                        .unwrap()
-                        .map_err(|e| panic!("{}", e))
-                        .map(move |client| {
-                            // This is the future that will drive message sends to completion
-                            tokio::spawn(client.1.map_err(|e| panic!("{}", e)));
-                            client.0.identify().unwrap();
+        let mut conns = Vec::with_capacity(config.servers.len());
+        for (server, mut modules) in config.servers.into_iter().zip(all_modules.into_iter()) {
+            let db = Arc::clone(&database);
+            let fut = IrcClient::new_future(server.as_irc_config())
+                .unwrap()
+                .map_err(|e| panic!("{}", e))
+                .map(move |client| {
+                    // This is the future that will drive message sends to completion
+                    tokio::spawn(client.1.map_err(|e| panic!("{}", e)));
+                    client.0.identify().unwrap();
 
-                            let client = Arc::new(client.0);
-                            let (mctx, mctx_receiver) = mpsc::unbounded();
-                            let mctx = Arc::new(mctx);
+                    let client = Arc::new(client.0);
+                    let (mctx, mctx_receiver) = mpsc::unbounded();
+                    let mctx = Arc::new(mctx);
 
-                            for (_, (ref mut cfg, module)) in &mut modules {
-                                if module.handles(Stage::Connected) {
-                                    module.connected(&client, &mctx, cfg);
+                    for (_, (ref mut cfg, module)) in &mut modules {
+                        if module.handles(Stage::Connected) {
+                            module.connected(&client, &mctx, cfg);
+                        }
+                    }
+
+                    // Deliver ready messages to send future
+                    // TODO: Pre/Post-MessageSend
+                    let client2 = Arc::clone(&client);
+                    tokio::spawn(mctx_receiver.for_each(move |(msg, due, mode)| {
+                        match due {
+                            message::DueBy::Now => {
+                                message::send(&client2, &msg, &mode);
+                            }
+                            message::DueBy::At(at) => {
+                                // This will fail on a negative duration, i.e. if at < now
+                                if let Ok(dur) = (at - Utc::now()).to_std() {
+                                    let now_std = Instant::now();
+                                    let client3 = Arc::clone(&client2);
+                                    tokio::spawn(
+                                        Delay::new(now_std + dur).map_err(|e| panic!("{}", e)).map(
+                                            move |_| {
+                                                message::send(&client3, &msg, &mode);
+                                            },
+                                        ),
+                                    );
+                                } else {
+                                    message::send(&client2, &msg, &mode);
+                                }
+                            }
+                        };
+
+                        Ok(())
+                    }));
+
+                    tokio::spawn(client.stream().map_err(|e| panic!("{}", e)).for_each(
+                        move |msg| {
+                            match msg
+                                .cfg_trigger_match(&[ConfigTrigger::Explicit(".help".to_string())])
+                            {
+                                // .help with no modules specified
+                                Some(Trigger::Explicit("")) => {
+                                    let mut res = String::new();
+                                    for (_, name) in modules.keys() {
+                                        if res.is_empty() {
+                                            res.push_str(&name);
+                                        } else {
+                                            res.push_str(", ");
+                                            res.push_str(&name);
+                                        }
+                                    }
+                                    reply_priv!(mctx, msg, "Modules: {}", res);
+                                }
+                                // Other .help
+                                Some(trigger) => {
+                                    if let Some((_, (_, ref mut module))) =
+                                        modules.iter_mut().find(|(_, (cfg, _))| {
+                                            cfg.triggers
+                                                .iter()
+                                                .find(|t| t.help_relevant(&trigger))
+                                                .is_some()
+                                        })
+                                    {
+                                        reply_priv!(mctx, msg, "{}", module.help());
+                                    } else {
+                                        reply_priv!(
+                                            mctx,
+                                            msg,
+                                            "{}",
+                                            "No module with that alias found"
+                                        )
+                                    }
+                                }
+                                // Regular message
+                                _ => {
+                                    for (_, (ref mut cfg, ref mut module)) in modules
+                                        .iter_mut()
+                                        .filter(|(_, (_, m))| m.handles(Stage::MessageReceived))
+                                    {
+                                        if let Some(t) = msg.cfg_trigger_match(&cfg.triggers) {
+                                            module.message_received(&client, &mctx, cfg, &msg, t);
+                                        }
+                                    }
                                 }
                             }
 
-                            // Deliver ready messages to send future
-                            // TODO: Pre/Post-MessageSend
-                            let client2 = Arc::clone(&client);
-                            tokio::spawn(mctx_receiver.for_each(move |(msg, due, mode)| {
-                                match due {
-                                    message::DueBy::Now => {
-                                        message::send(&client2, &msg, &mode);
-                                    }
-                                    message::DueBy::At(at) => {
-                                        // This will fail on a negative duration, i.e. if at < now
-                                        if let Ok(dur) = (at - Utc::now()).to_std() {
-                                            let now_std = Instant::now();
-                                            let client3 = Arc::clone(&client2);
-                                            tokio::spawn(
-                                                Delay::new(now_std + dur)
-                                                    .map_err(|e| panic!("{}", e))
-                                                    .map(move |_| {
-                                                        message::send(&client3, &msg, &mode);
-                                                    }),
-                                            );
-                                        } else {
-                                            message::send(&client2, &msg, &mode);
-                                        }
-                                    }
-                                };
+                            Ok(())
+                        },
+                    ));
+                });
 
-                                Ok(())
-                            }));
+            conns.push(fut);
+        }
 
-                            tokio::spawn(client.stream().map_err(|e| panic!("{}", e)).for_each(
-                                move |msg| {
-                                    match msg.cfg_trigger_match(&[ConfigTrigger::Explicit(
-                                        ".help".to_string(),
-                                    )]) {
-                                        // .help with no modules specified
-                                        Some(Trigger::Explicit("")) => {
-                                            let mut res = String::new();
-                                            for (_, name) in modules.keys() {
-                                                if res.is_empty() {
-                                                    res.push_str(&name);
-                                                } else {
-                                                    res.push_str(", ");
-                                                    res.push_str(&name);
-                                                }
-                                            }
-                                            reply_priv!(mctx, msg, "Modules: {}", res);
-                                        }
-                                        // Other .help
-                                        Some(trigger) => {
-                                            if let Some((_, (_, ref mut module))) =
-                                                modules.iter_mut().find(|(_, (cfg, _))| {
-                                                    cfg.triggers
-                                                        .iter()
-                                                        .find(|t| t.help_relevant(&trigger))
-                                                        .is_some()
-                                                })
-                                            {
-                                                reply_priv!(mctx, msg, "{}", module.help());
-                                            } else {
-                                                reply_priv!(
-                                                    mctx,
-                                                    msg,
-                                                    "{}",
-                                                    "No module with that alias found"
-                                                )
-                                            }
-                                        }
-                                        // Regular message
-                                        _ => {
-                                            for (_, (ref mut cfg, ref mut module)) in
-                                                modules.iter_mut().filter(|(_, (_, m))| {
-                                                    m.handles(Stage::MessageReceived)
-                                                })
-                                            {
-                                                if let Some(t) =
-                                                    msg.cfg_trigger_match(&cfg.triggers)
-                                                {
-                                                    module.message_received(
-                                                        &client, &mctx, cfg, &msg, t,
-                                                    );
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    Ok(())
-                                },
-                            ));
-                        }),
-                );
-            }
-            Ok(())
-        }))
+        Ok(conns)
     }
 }
