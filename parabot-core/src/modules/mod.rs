@@ -54,7 +54,7 @@ macro_rules! handles {
 
 pub trait Module: Send {
     fn handles(&self, _stage: Stage) -> bool;
-    fn help<'t>(&self) -> String;
+    fn help(&self) -> String;
 
     #[inline]
     fn connected(
@@ -110,7 +110,7 @@ macro_rules! module {
                 }
             }
             #[inline]
-            fn help<'t>(&self) -> String {
+            fn help(&self) -> String {
                 $help(self)
             }
 

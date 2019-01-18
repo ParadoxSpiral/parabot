@@ -146,9 +146,9 @@ impl<'de> Visitor<'de> for TriggerVisitor {
     where
         E: de::Error,
     {
-        if (&s).chars().next() == Some('.') {
+        if s.starts_with(".") {
             Ok(ConfigTrigger::Explicit(s.to_lowercase()))
-        } else if (&s).chars().next() == Some('<') && (&s).chars().last() == Some('>') {
+        } else if s.starts_with("<") && s.ends_with(">") {
             let s = s.to_lowercase();
             if s == "<always>" {
                 Ok(ConfigTrigger::Always)
@@ -167,12 +167,10 @@ impl<'de> Visitor<'de> for TriggerVisitor {
                         } else {
                             allowed.push(format!("https://{}", dom));
                         }
+                    } else if ignore {
+                        ignored.push(dom[1..].to_string());
                     } else {
-                        if ignore {
-                            ignored.push(dom[1..].to_string());
-                        } else {
-                            allowed.push(dom.to_string());
-                        }
+                        allowed.push(dom.to_string());
                     }
                 }
                 Ok(ConfigTrigger::Domains(allowed, ignored))

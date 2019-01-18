@@ -221,12 +221,12 @@ pub(crate) fn send(ctx: &IrcClient, msg: &Message, mode: &SendMode) {
     } else if *mode == SendMode::Truncated {
         ctx.send_privmsg(target, &msg[..msg_bytes]).unwrap();
     } else if !msg.contains("\x02")
-        && !msg.contains("\x03")
-        && !msg.contains("\x09")
-        && !msg.contains("\x13")
-        && !msg.contains("\x0f")
-        && !msg.contains("\x15")
-        && !msg.contains("\x16")
+        && !msg.contains('\x03')
+        && !msg.contains('\x09')
+        && !msg.contains('\x13')
+        && !msg.contains('\x0f')
+        && !msg.contains('\x15')
+        && !msg.contains('\x16')
     {
         // No control codes that need to be kept intact
         let (mut bytes, mut start) = (0, 0);

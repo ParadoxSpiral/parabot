@@ -194,7 +194,7 @@ impl<'c, 'l> Builder<'c, 'l> {
                     let (mctx, mctx_receiver) = mpsc::unbounded();
                     let mctx = Arc::new(mctx);
 
-                    for (_, (ref mut cfg, module)) in &mut modules {
+                    for (ref mut cfg, module) in modules.values_mut() {
                         if module.handles(Stage::Connected) {
                             module.connected(&client, &mctx, cfg);
                         }
