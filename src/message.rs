@@ -63,11 +63,6 @@ pub trait IrcMessageExt {
     fn reply_priv(&self, content: String) -> (Message, DueBy, SendMode);
 }
 
-// Ugh
-pub(crate) trait IrcMessageExtInternal {
-    fn cfg_trigger_match<'m>(&'m self, trigger: &[ConfigTrigger]) -> Option<Trigger<'m>>;
-}
-
 impl IrcMessageExt for Message {
     #[inline]
     fn private(&self) -> bool {
@@ -101,67 +96,67 @@ impl IrcMessageExt for Message {
     }
 }
 
-impl IrcMessageExtInternal for Message {
-    // TODO: Fix unicode indexing
-    fn cfg_trigger_match<'m>(&'m self, triggers: &[ConfigTrigger]) -> Option<Trigger<'m>> {
-        for t in triggers {
-            match t {
-                ConfigTrigger::Always => {
-                    return Some(Trigger::Always(self));
-                }
-                ConfigTrigger::Action(act) => {
-                    if let Command::PRIVMSG(_, ref content) = self.command {
-                        if content.to_lowercase().starts_with("action")
-                            && content[7..].starts_with(act)
-                        {
-                            return Some(Trigger::Action(
-                                content[7 + act[3..].len()..content.len() - 1].trim(),
-                            ));
-                        }
-                    }
-                }
-                ConfigTrigger::Explicit(exp) => {
-                    if let Command::PRIVMSG(_, ref content) = self.command {
-                        if content.starts_with(exp) {
-                            return Some(Trigger::Explicit(content[exp.len()..].trim()));
-                        }
-                    }
-                }
-                ConfigTrigger::Domains(allowed, ignored) => {
-                    if let Command::PRIVMSG(_, ref content) = self.command {
-                        let mut finder = LinkFinder::new();
-                        finder.kinds(&[LinkKind::Url]);
-
-                        let urls: Vec<&str> = finder
-                            .kinds(&[LinkKind::Url])
-                            .links(content)
-                            .map(|l| l.as_str())
-                            // FIXME: .contains fails to resolve for some reason…
-                            .filter(|l| {
-                                allowed.iter().any(|a| a == l) && !ignored.iter().any(|i| i == l)
-                            })
-                            .collect();
-
-                        if !urls.is_empty() {
-                            return Some(Trigger::Urls(urls));
-                        }
-                    }
-                }
-                ConfigTrigger::Command(cmd) => {
-                    if cmd
-                        == &*String::from(&self.command)
-                            .split(' ')
-                            .next()
-                            .unwrap()
-                            .to_lowercase()
+// TODO: Fix unicode indexing
+pub(crate) fn cfg_trigger_match<'m>(
+    msg: &'m Message,
+    triggers: &[ConfigTrigger],
+) -> Option<Trigger<'m>> {
+    for t in triggers {
+        match t {
+            ConfigTrigger::Always => {
+                return Some(Trigger::Always(msg));
+            }
+            ConfigTrigger::Action(act) => {
+                if let Command::PRIVMSG(_, ref content) = msg.command {
+                    if content.to_lowercase().starts_with("action") && content[7..].starts_with(act)
                     {
-                        return Some(Trigger::Command(&self.command));
+                        return Some(Trigger::Action(
+                            content[7 + act[3..].len()..content.len() - 1].trim(),
+                        ));
                     }
                 }
             }
+            ConfigTrigger::Explicit(exp) => {
+                if let Command::PRIVMSG(_, ref content) = msg.command {
+                    if content.starts_with(exp) {
+                        return Some(Trigger::Explicit(content[exp.len()..].trim()));
+                    }
+                }
+            }
+            ConfigTrigger::Domains(allowed, ignored) => {
+                if let Command::PRIVMSG(_, ref content) = msg.command {
+                    let mut finder = LinkFinder::new();
+                    finder.kinds(&[LinkKind::Url]);
+
+                    let urls: Vec<&str> = finder
+                        .kinds(&[LinkKind::Url])
+                        .links(content)
+                        .map(|l| l.as_str())
+                        // FIXME: .contains fails to resolve for some reason…
+                        .filter(|l| {
+                            allowed.iter().any(|a| a == l) && !ignored.iter().any(|i| i == l)
+                        })
+                        .collect();
+
+                    if !urls.is_empty() {
+                        return Some(Trigger::Urls(urls));
+                    }
+                }
+            }
+            ConfigTrigger::Command(cmd) => {
+                if cmd
+                    == &*String::from(&msg.command)
+                        .split(' ')
+                        .next()
+                        .unwrap()
+                        .to_lowercase()
+                {
+                    return Some(Trigger::Command(&msg.command));
+                }
+            }
         }
-        None
     }
+    None
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -212,7 +207,6 @@ pub enum ControlCode {
     Reverse = 0x16,
 }
 
-#[inline]
 pub(crate) fn send(ctx: &IrcClient, msg: &Message, mode: &SendMode) {
     let (msg_limit, msg_bytes, target, msg) =
         if let Command::PRIVMSG(ref target, ref msg) = msg.command {
@@ -225,7 +219,7 @@ pub(crate) fn send(ctx: &IrcClient, msg: &Message, mode: &SendMode) {
         ctx.send_privmsg(target, msg).unwrap();
     } else if *mode == SendMode::Truncated {
         ctx.send_privmsg(target, &msg[..msg_bytes]).unwrap();
-    } else if !msg.contains("\x02")
+    } else if !msg.contains('\x02')
         && !msg.contains('\x03')
         && !msg.contains('\x09')
         && !msg.contains('\x13')

@@ -19,7 +19,7 @@ use irc::client::IrcClient;
 
 use std::sync::Arc;
 
-use crate::{error::*, message::MessageContext, *};
+use crate::{message::MessageContext, *};
 
 #[cfg(feature = "modules")]
 mod choose;
@@ -42,7 +42,7 @@ pub(crate) fn load_module(cfg: &mut ModuleCfg) -> Result<Option<Box<Module>>> {
 }
 
 /// Key: Channel name, module name. Value: Module configuration, Module pointer
-pub type ModuleContext = HashMap<(String, String), (ModuleCfg, Box<Module>)>;
+pub(crate) type ModuleContext = HashMap<(String, String), (ModuleCfg, Box<Module>)>;
 
 pub trait Module: Send {
     fn handles(&self, _stage: Stage) -> bool;

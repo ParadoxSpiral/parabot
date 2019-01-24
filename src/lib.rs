@@ -65,7 +65,7 @@ pub mod prelude {
     pub use crate::{
         config::{Config, Module as ModuleCfg},
         message::{IrcMessageExt, Message, MessageContext, Stage, Trigger},
-        modules::{Module, ModuleContext},
+        modules::Module,
         Builder,
     };
     pub use irc::client::IrcClient;
@@ -82,7 +82,7 @@ use tokio::{prelude::*, timer::Delay};
 
 use std::{collections::HashMap, path::Path, sync::Arc, time::Instant};
 
-use crate::{config::ConfigTrigger, error::*, message::IrcMessageExtInternal, prelude::*};
+use crate::{config::ConfigTrigger, error::*, modules::ModuleContext, prelude::*};
 
 enum ConfigKind<'p> {
     File(&'p Path),
@@ -136,18 +136,15 @@ impl<'c, 'l> Builder<'c, 'l> {
     /// * No config file was provided
     /// * Default modules were disabled, and no module loader was specified
     pub fn build(self) -> Result<Vec<impl Future<Item = (), Error = ()>>> {
-        let mut config = match self.config {
-            Some(ConfigKind::Parsed(c)) => c,
-            Some(ConfigKind::File(p)) => Config::from_path(p)?,
-            None => panic!("No config file specified, this is a static programmer error!"),
+        let mut config = match self.config.expect("No config file provided to builder") {
+            ConfigKind::Parsed(c) => c,
+            ConfigKind::File(p) => Config::from_path(p)?,
         };
 
         #[cfg(not(feature = "modules"))]
-        {
-            if self.loader.is_none() {
-                panic!("No module loader specified, even though default modules disabled");
-            }
-        }
+        let loader = self
+            .loader
+            .expect("No module loader specified, but default modules disabled");
 
         // Check/initialize database
         let database = Arc::new(Mutex::new(SqliteConnection::establish(&config.database)?));
@@ -168,8 +165,8 @@ impl<'c, 'l> Builder<'c, 'l> {
                             .ok_or_else(|| Error::ModuleNotFound(cfg.name.clone()))?
                     };
                     #[cfg(not(feature = "modules"))]
-                    let module = (self.loader.unrwap())(&mut cfg)?
-                        .ok_or_else(|| Error::ModuleNotFound(cfg.name.clone()))?;
+                    let module =
+                        loader(&mut cfg)?.ok_or_else(|| Error::ModuleNotFound(cfg.name.clone()))?;
 
                     modules.insert(
                         (channel.name.clone(), cfg.name.clone()),
@@ -232,9 +229,10 @@ impl<'c, 'l> Builder<'c, 'l> {
 
                     tokio::spawn(client.stream().map_err(|e| panic!("{}", e)).for_each(
                         move |msg| {
-                            match msg
-                                .cfg_trigger_match(&[ConfigTrigger::Explicit(".help".to_string())])
-                            {
+                            match message::cfg_trigger_match(
+                                &msg,
+                                &[ConfigTrigger::Explicit(".help".to_string())],
+                            ) {
                                 // .help with no modules specified
                                 Some(Trigger::Explicit("")) => {
                                     let mut res = String::new();
@@ -274,7 +272,9 @@ impl<'c, 'l> Builder<'c, 'l> {
                                         .iter_mut()
                                         .filter(|(_, (_, m))| m.handles(Stage::Received))
                                     {
-                                        if let Some(t) = msg.cfg_trigger_match(&cfg.triggers) {
+                                        if let Some(t) =
+                                            message::cfg_trigger_match(&msg, &cfg.triggers)
+                                        {
                                             module.received(&client, &mctx, cfg, &msg, t);
                                         }
                                     }

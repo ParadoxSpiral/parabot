@@ -16,4 +16,4 @@ A module is a struct that provides some funtions that are (potentially) called d
 
 When the bot is built, each module is loaded with a module loader, which maps the names in the config file to the struct implementing the Module trait. The default module loader only knows about already included modules, so when a custom module is required, you need a loader that constructs the module. It only needs to handle your own module, as the default loader is chained after it (if default modules are enabled).
 
-To simplify implementing your own module, there is a derive-macro. See `src/modules/choose.rs` or any other module in that directory as an example of how to implement a module.
+To simplify implementing your own module, there is a derive-macro. See `src/modules/choose.rs` as a commented example, or any other module in that directory of how to implement a module.
