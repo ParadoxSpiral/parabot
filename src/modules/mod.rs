@@ -31,6 +31,8 @@ pub use self::choose::Choose;
 #[cfg(feature = "modules")]
 pub use self::dice::Dice;
 
+pub use parabot_derive::module;
+
 #[inline]
 #[cfg(feature = "modules")]
 pub(crate) fn load_module(cfg: &mut ModuleCfg) -> Result<Option<Box<Module>>> {

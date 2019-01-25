@@ -65,11 +65,10 @@ pub mod prelude {
     pub use crate::{
         config::{Config, Module as ModuleCfg},
         message::{IrcMessageExt, Message, MessageContext, Stage, Trigger},
-        modules::Module,
+        modules::{module, Module},
         Builder,
     };
     pub use irc::client::IrcClient;
-    pub use parabot_derive::Module;
     pub use std::sync::Arc;
 }
 

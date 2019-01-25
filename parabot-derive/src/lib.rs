@@ -18,104 +18,128 @@
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
+use proc_macro2::{Ident, TokenStream as TokenStream2};
 use quote::quote;
-use syn::{self, parse_macro_input, DeriveInput, Meta, MetaList, MetaNameValue, NestedMeta};
+use syn::{
+    self,
+    parse::{Error, Parse, ParseStream, Result},
+    parse_macro_input,
+    spanned::Spanned,
+    FnArg, ItemFn, ItemStruct, LitStr, Path, PathSegment, Token, Type, TypePath, TypeReference,
+};
 
-// TODO: Nice error messages
-#[proc_macro_derive(Module, attributes(module))]
-pub fn derive(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-    let name = input.ident;
-
-    let attrs = if let Some(Ok(Meta::List(MetaList { nested: attrs, .. }))) =
-        input.attrs.get(0).map(|a| a.parse_meta())
-    {
-        attrs
+#[proc_macro_attribute]
+pub fn module(args: TokenStream, input: TokenStream) -> TokenStream {
+    // Check if we are called on a struct, or fn definition
+    if let Ok(parsed) = syn::parse::<ItemStruct>(input.clone()) {
+        build_struct(args, parsed)
+    } else if let Ok(parsed) = syn::parse::<ItemFn>(input) {
+        build_fn(args, parsed)
     } else {
-        panic!("{} has malformed attributes", name);
-    };
+        panic!("This macro only operates on struct and funtion definitions")
+    }
+}
 
-    let mut has_help = false;
-    let mut impls = proc_macro2::TokenStream::new();
-    let mut handles = proc_macro2::TokenStream::new();
-    for attr in attrs {
-        match attr {
-            NestedMeta::Meta(Meta::NameValue(MetaNameValue {
-                ref ident, ref lit, ..
-            })) if ident == "help" => {
-                has_help = true;
-                impls.extend(quote! {
-                    fn help(&self) -> &'static str {
-                        #lit
-                    }
-                });
-            }
-            NestedMeta::Meta(Meta::List(MetaList { ident, nested, .. })) => {
-                let fun = if let Some(NestedMeta::Meta(Meta::Word(fun))) =
-                    nested.first().as_ref().map(|p| p.value())
-                {
-                    fun
-                } else {
-                    panic!("{} message handler it not a valid ident", ident);
-                };
+struct StructAttrs {
+    help: LitStr,
+    handles: TokenStream2,
+    impls: TokenStream2,
+}
+impl Parse for StructAttrs {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let id: Ident = input.parse()?;
+        let help = if id == "help" && input.peek(Token![=]) {
+            input.parse::<Token![=]>().unwrap();
+            input.parse::<LitStr>()?
+        } else {
+            return Err(Error::new(id.span(), "expected `help = \"…\"`"));
+        };
+        input
+            .parse::<Token![,]>()
+            .map_err(|_| input.error("expected at least one handler"))?;
 
-                if nested.len() > 1 {
-                    panic!("Only one message handler per stage per module supported");
-                }
-
-                if ident == "connected" {
+        let mut impls = TokenStream2::new();
+        let mut handles = TokenStream2::new();
+        for id in input.parse_terminated::<_, Token![,]>(Ident::parse)?.iter() {
+            match &*id.to_string() {
+                "connected" => {
                     handles.extend(quote! {
                         Stage::Connected => true,
                     });
-                    impls.extend(quote!{
-                        fn connected(&mut self, client: &Arc<IrcClient>, mctx: &MessageContext, cfg: &mut ModuleCfg) {
-                            self.#fun(client, mctx, cfg)
+                    impls.extend(quote! {
+                        fn connected(&mut self, client: &Arc<IrcClient>, mctx: &MessageContext,
+                                     cfg: &mut ModuleCfg) {
+                            self.impl_detail_handle_connected(client, mctx, cfg)
                         }
                     });
-                } else if ident == "received" {
+                }
+                "received" => {
                     handles.extend(quote! {
                         Stage::Received => true,
                     });
-                    impls.extend(quote!{
-                        fn received(&mut self, client: &Arc<IrcClient>, mctx: &MessageContext, cfg: &mut ModuleCfg, msg: &Message, trigger: Trigger) {
-                            self.#fun(client, mctx, cfg, msg, trigger)
+                    impls.extend(quote! {
+                        fn received(&mut self, client: &Arc<IrcClient>, mctx: &MessageContext,
+                                    cfg: &mut ModuleCfg, msg: &Message, trigger: Trigger) {
+                            self.impl_detail_handle_received(client, mctx, cfg, msg, trigger)
                         }
                     });
-                } else if ident == "pre_send" {
+                }
+                "pre_send" => {
                     handles.extend(quote! {
                         Stage::PreSend => true,
                     });
-                    impls.extend(quote!{
-                        fn pre_send(&mut self, client: &Arc<IrcClient>, mctx: &MessageContext, cfg: &mut ModuleCfg, msg: &Message) {
-                            self.#fun(client, mctx, cfg, msg)
+                    impls.extend(quote! {
+                        fn pre_send(&mut self, client: &Arc<IrcClient>, mctx: &MessageContext,
+                                    cfg: &mut ModuleCfg, msg: &Message) {
+                            self.impl_detail_handle_pre_send(client, mctx, cfg, msg)
                         }
                     });
-                } else if ident == "post_send" {
+                }
+                "post_send" => {
                     handles.extend(quote! {
                         Stage::PostSend => true,
                     });
-                    impls.extend(quote!{
-                        fn post_send(&mut self, client: &Arc<IrcClient>, mctx: &MessageContext, cfg: &mut ModuleCfg, msg: &Message) {
-                            self.#fun(client, mctx, cfg, msg)
+                    impls.extend(quote! {
+                        fn post_send(&mut self, client: &Arc<IrcClient>, mctx: &MessageContext,
+                                     cfg: &mut ModuleCfg, msg: &Message) {
+                            self.impl_detail_handle_post_send(client, mctx, cfg, msg)
                         }
                     });
-                } else {
-                    panic!("{} is not a valid stage, expected one of `connected`, `received`, `pre_send`, `post_send`", ident);
+                }
+                _ => {
+                    return Err(
+                        input.error("expected one of: connected, received, pre_send, post_send")
+                    );
                 }
             }
-            _ => panic!("{:#?}", attr),
         }
-    }
+        if handles.is_empty() {
+            return Err(input.error("expected at least one handler"));
+        }
 
-    if !has_help {
-        panic!("{} provides no help message", name);
+        Ok(Self {
+            help,
+            handles,
+            impls,
+        })
     }
-    if handles.is_empty() {
-        panic!("{} provides no handler", name);
-    }
+}
 
+fn build_struct(args: TokenStream, parsed: ItemStruct) -> TokenStream {
+    let attrs = parse_macro_input!(args as StructAttrs);
+
+    let name = &parsed.ident;
+    let help = attrs.help;
+    let handles = attrs.handles;
+    let impls = attrs.impls;
     let gen = quote! {
+        #parsed
+
         impl Module for #name {
+            fn help(&self) -> &'static str {
+                #help
+            }
+
             fn handles(&self, stage: Stage) -> bool {
                 match stage {
                     #handles
@@ -124,6 +148,168 @@ pub fn derive(input: TokenStream) -> TokenStream {
             }
 
             #impls
+        }
+    };
+    gen.into()
+}
+
+struct FnAttrs {
+    impl_target: Ident,
+    fn_decl: TokenStream2,
+}
+impl Parse for FnAttrs {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let mut iter = input
+            .parse_terminated::<_, Token![,]>(Ident::parse)?
+            .into_iter();
+        let impl_target = iter
+            .next()
+            .ok_or_else(|| input.error("expected module ident"))?;
+        let fn_decl = match &*iter
+            .next()
+            .ok_or_else(|| input.error("expected handler kind"))?
+            .to_string()
+        {
+            "connected" => quote! {
+                    impl_detail_handle_connected(&mut self,
+                                                 client: &Arc<IrcClient>,
+                                                 mctx: &MessageContext,
+                                                 cfg: &mut ModuleCfg)
+            },
+            "received" => quote! {
+                    impl_detail_handle_received(&mut self,
+                                                client: &Arc<IrcClient>,
+                                                mctx: &MessageContext,
+                                                cfg: &mut ModuleCfg,
+                                                msg: &Message,
+                                                trigger: Trigger)
+            },
+            "pre_send" => quote! {
+                    impl_detail_handle_pre_send(&mut self,
+                                                client: &Arc<IrcClient>,
+                                                mctx: &MessageContext,
+                                                cfg: &mut ModuleCfg,
+                                                msg: &Message)
+            },
+            "post_send" => quote! {
+                    impl_detail_handle_post_send(&mut self,
+                                                 client: &Arc<IrcClient>,
+                                                 mctx: &MessageContext,
+                                                 cfg: &mut ModuleCfg,
+                                                 msg: &Message)
+            },
+            _ => {
+                return Err(input.error("expected one of: connected, received, pre_send, post_send"));
+            }
+        };
+
+        Ok(Self {
+            impl_target,
+            fn_decl,
+        })
+    }
+}
+
+fn build_fn(args: TokenStream, parsed: ItemFn) -> TokenStream {
+    let attrs = parse_macro_input!(args as FnAttrs);
+    let target = attrs.impl_target;
+
+    let mut args = TokenStream2::new();
+    let mut iter = parsed.decl.inputs.iter();
+    while let Some(FnArg::Captured(arg)) = iter.next() {
+        match &arg.ty {
+            Type::Reference(TypeReference { elem, .. }) => match &**elem {
+                Type::Path(TypePath {
+                    path: Path { segments, .. },
+                    ..
+                }) => {
+                    let PathSegment { ref ident, .. } = segments[0];
+                    match &*ident.to_string() {
+                        ty if ty == &target.to_string() => {
+                            args.extend(quote! { self, });
+                        }
+                        "Arc" => {
+                            args.extend(quote! { client, });
+                        }
+                        "MessageContext" => {
+                            args.extend(quote! { mctx, });
+                        }
+                        "ModuleCfg" => {
+                            args.extend(quote! { cfg, });
+                        }
+                        "Message" => {
+                            args.extend(quote! { msg, });
+                        }
+                        _ => {
+                            args.extend(
+                                Error::new(
+                                    arg.ty.span(),
+                                    "expected one type of: \
+                                     `&Arc<IrcClient>`, `&MessageContext`, `&mut ModuleCfg`, \
+                                     `&Message`, `Trigger`",
+                                )
+                                .to_compile_error(),
+                            );
+                        }
+                    }
+                }
+                _ => {
+                    args.extend(
+                        Error::new(
+                            arg.ty.span(),
+                            "expected one type of: \
+                             `&Arc<IrcClient>`, `&MessageContext`, `&mut ModuleCfg`, \
+                             `&Message`, `Trigger`",
+                        )
+                        .to_compile_error(),
+                    );
+                }
+            },
+            Type::Path(TypePath {
+                path: Path { segments, .. },
+                ..
+            }) => {
+                let PathSegment { ref ident, .. } = segments[0];
+                match &*ident.to_string() {
+                    "Trigger" => {
+                        args.extend(quote! { trigger, });
+                    }
+                    _ => {
+                        args.extend(
+                            Error::new(
+                                arg.ty.span(),
+                                "expected one type of: \
+                                 `&Arc<IrcClient>`, `&MessageContext`, `&mut ModuleCfg`, \
+                                 `&Message`, `Trigger`",
+                            )
+                            .to_compile_error(),
+                        );
+                    }
+                }
+            }
+            _ => {
+                args.extend(
+                    Error::new(
+                        arg.ty.span(),
+                        "expected one type of: \
+                         `&Arc<IrcClient>`, `&MessageContext`, `&mut ModuleCfg`, \
+                         `&Message`, `Trigger`",
+                    )
+                    .to_compile_error(),
+                );
+            }
+        }
+    }
+
+    let fun = &parsed.ident;
+    let fn_decl = attrs.fn_decl;
+    let gen = quote! {
+        #parsed
+
+        impl #target {
+            fn #fn_decl {
+                #fun(#args)
+            }
         }
     };
 

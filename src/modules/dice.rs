@@ -21,10 +21,9 @@ use regex::Regex;
 
 use crate::prelude::*;
 
-#[derive(Module)]
 #[module(
     help = "'.roll [x]d<n>[, …]': roll 1 or more x (or 1) n sided dice",
-    received(handle_received)
+    received
 )]
 pub struct Dice {
     regex: Regex,
@@ -37,83 +36,77 @@ impl Dice {
             regex: Regex::new(r"(?P<count>.*?)d(?P<sides>[^,\s]*),{0,}\s*").unwrap(),
         }
     }
+}
 
-    fn handle_received(
-        &mut self,
-        _: &Arc<IrcClient>,
-        mctx: &MessageContext,
-        _: &mut ModuleCfg,
-        msg: &Message,
-        trigger: Trigger,
-    ) {
-        let to_roll = match trigger {
-            Trigger::Explicit(r) => r,
-            Trigger::Action(r) => r,
-            _ => panic!("dice module's triggers wrongly configured"),
-        };
+#[module(Dice, received)]
+fn received(state: &mut Dice, mctx: &MessageContext, msg: &Message, trigger: Trigger) {
+    let to_roll = match trigger {
+        Trigger::Explicit(r) => r,
+        Trigger::Action(r) => r,
+        _ => panic!("dice module's triggers wrongly configured"),
+    };
 
-        let mut roll = 0;
-        let mut err_count = String::new();
-        let mut err_sides = String::new();
-        for cap in self.regex.captures_iter(to_roll) {
-            let mut c_err = false;
-            let count = cap.name("count").unwrap().as_str();
-            let count = if count.is_empty() {
-                1
-            } else {
-                match count.parse::<usize>() {
-                    Ok(c) => c,
-                    Err(_) => {
-                        if err_count.is_empty() {
-                            err_count += &*format!(" `{}`", count);
-                        } else {
-                            err_count += &*format!(", `{}`", count);
-                        }
-                        c_err = true;
-                        0
-                    }
-                }
-            };
-            let sides = cap.name("sides").unwrap().as_str();
-            let sides = match sides.parse::<usize>() {
-                Ok(s) => s,
+    let mut roll = 0;
+    let mut err_count = String::new();
+    let mut err_sides = String::new();
+    for cap in state.regex.captures_iter(to_roll) {
+        let mut c_err = false;
+        let count = cap.name("count").unwrap().as_str();
+        let count = if count.is_empty() {
+            1
+        } else {
+            match count.parse::<usize>() {
+                Ok(c) => c,
                 Err(_) => {
-                    if err_sides.is_empty() {
-                        err_sides += &*format!(" `{}`", sides);
+                    if err_count.is_empty() {
+                        err_count += &*format!(" `{}`", count);
                     } else {
-                        err_sides += &*format!(", `{}`", sides);
+                        err_count += &*format!(", `{}`", count);
                     }
-                    continue;
+                    c_err = true;
+                    0
                 }
-            };
-            if c_err {
+            }
+        };
+        let sides = cap.name("sides").unwrap().as_str();
+        let sides = match sides.parse::<usize>() {
+            Ok(s) => s,
+            Err(_) => {
+                if err_sides.is_empty() {
+                    err_sides += &*format!(" `{}`", sides);
+                } else {
+                    err_sides += &*format!(", `{}`", sides);
+                }
                 continue;
             }
+        };
+        if c_err {
+            continue;
+        }
 
-            if err_count.is_empty() && err_sides.is_empty() {
-                let sampler = Uniform::new_inclusive(1, sides);
-                for _ in 0..count {
-                    roll += sampler.sample(&mut thread_rng());
-                }
+        if err_count.is_empty() && err_sides.is_empty() {
+            let sampler = Uniform::new_inclusive(1, sides);
+            for _ in 0..count {
+                roll += sampler.sample(&mut thread_rng());
             }
         }
+    }
 
-        let mut err = String::new();
-        if !err_count.is_empty() {
-            err += &*format!("Invalid counts:{}", err_count);
-        }
-        if !err_sides.is_empty() {
-            if err.is_empty() {
-                err += &*format!("Invalid sides:{}", err_sides);
-            } else {
-                err += &*format!("; Invalid sides:{}", err_sides);
-            }
-        }
-
+    let mut err = String::new();
+    if !err_count.is_empty() {
+        err += &*format!("Invalid counts:{}", err_count);
+    }
+    if !err_sides.is_empty() {
         if err.is_empty() {
-            reply_priv_pub!(mctx, msg, "{}", roll; "{} rolled {}", no_mention!(msg.source_nickname().unwrap().to_owned()), roll);
+            err += &*format!("Invalid sides:{}", err_sides);
         } else {
-            reply!(mctx, msg, "{}", err);
+            err += &*format!("; Invalid sides:{}", err_sides);
         }
+    }
+
+    if err.is_empty() {
+        reply_priv_pub!(mctx, msg, "{}", roll; "{} rolled {}", no_mention!(msg.source_nickname().unwrap().to_owned()), roll);
+    } else {
+        reply!(mctx, msg, "{}", err);
     }
 }
