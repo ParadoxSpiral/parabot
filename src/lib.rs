@@ -108,7 +108,7 @@ impl<'c, 'l> Builder<'c, 'l> {
         F: Fn(&mut ModuleCfg) -> Result<Option<Box<dyn Module>>>,
     {
         Builder {
-            config: None,
+            config: self.config,
             loader: Some(loader),
         }
     }
