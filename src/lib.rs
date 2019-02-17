@@ -32,7 +32,7 @@ pub mod prelude {
         config::{Config, Module as ModuleCfg},
         // FIXME: macros should be reexported, but for some reason they can't be
         message::{IrcMessageExt, Message, MessageContext, Stage, Trigger},
-        modules::{module, Module},
+        modules::{module, DbConn, Module},
         Builder,
     };
     pub use irc::client::IrcClient;
@@ -40,10 +40,10 @@ pub mod prelude {
 }
 
 use chrono::Utc;
-use diesel::{sqlite::SqliteConnection, Connection};
+use diesel::r2d2::ConnectionManager;
 use futures::sync::mpsc;
 use irc::client::{ext::ClientExt, Client, IrcClient};
-use parking_lot::Mutex;
+use r2d2::Pool;
 use tokio::{prelude::*, timer::Delay};
 
 use std::{collections::HashMap, path::Path, sync::Arc, time::Instant};
@@ -55,9 +55,10 @@ enum ConfigKind<'p> {
     Parsed(Config),
 }
 
+// FIXME: The dyn Fn can go with existial types
 pub struct Builder<'c, 'l> {
     config: Option<ConfigKind<'c>>,
-    loader: Option<&'l dyn Fn(&mut ModuleCfg) -> Result<Option<Box<dyn Module>>>>,
+    loader: Option<&'l dyn Fn(&DbConn, &mut ModuleCfg) -> Result<Option<Box<dyn Module>>>>,
 }
 
 impl<'c, 'l> Builder<'c, 'l> {
@@ -72,7 +73,7 @@ impl<'c, 'l> Builder<'c, 'l> {
     #[inline]
     pub fn with_loader<F>(self, loader: &'l F) -> Self
     where
-        F: Fn(&mut ModuleCfg) -> Result<Option<Box<dyn Module>>>,
+        F: Fn(&DbConn, &mut ModuleCfg) -> Result<Option<Box<dyn Module>>>,
     {
         Builder {
             config: self.config,
@@ -113,9 +114,10 @@ impl<'c, 'l> Builder<'c, 'l> {
             .expect("No module loader specified, but default modules disabled");
 
         // Check/initialize database
-        let database = Arc::new(Mutex::new(SqliteConnection::establish(&config.database)?));
+        let db_pool = Pool::new(ConnectionManager::new(config.database.clone()))?;
 
         // Setup modules
+        let db = db_pool.get()?;
         let mut all_modules = Vec::with_capacity(config.servers.len());
         for server in &mut config.servers {
             let mut modules = ModuleContext::new();
@@ -123,11 +125,11 @@ impl<'c, 'l> Builder<'c, 'l> {
                 for mut cfg in &mut channel.modules {
                     #[cfg(feature = "modules")]
                     let module = if let Some(ref loader) = self.loader {
-                        loader(&mut cfg)
-                            .or_else(|_| modules::load_module(&mut cfg))?
+                        loader(&db, &mut cfg)?
+                            .map_or_else(|| modules::load_module(&db, &mut cfg), |v| Ok(Some(v)))?
                             .ok_or_else(|| Error::ModuleNotFound(cfg.name.clone()))?
                     } else {
-                        modules::load_module(&mut cfg)?
+                        modules::load_module(&db, &mut cfg)?
                             .ok_or_else(|| Error::ModuleNotFound(cfg.name.clone()))?
                     };
                     #[cfg(not(feature = "modules"))]
@@ -142,12 +144,12 @@ impl<'c, 'l> Builder<'c, 'l> {
             }
             all_modules.push(modules);
         }
+        drop(db);
 
         let mut conns = Vec::with_capacity(config.servers.len());
         for (server, mut modules) in config.servers.into_iter().zip(all_modules.into_iter()) {
-            let db = Arc::clone(&database);
-            let fut = IrcClient::new_future(server.as_irc_config())
-                .unwrap()
+            let db = db_pool.get()?;
+            let fut = IrcClient::new_future(server.as_irc_config())?
                 .map_err(|e| panic!("{}", e))
                 .map(move |client| {
                     // This is the future that will drive message sends to completion
@@ -160,7 +162,7 @@ impl<'c, 'l> Builder<'c, 'l> {
 
                     for (ref mut cfg, module) in modules.values_mut() {
                         if module.handles(Stage::Connected) {
-                            module.connected(&client, &mctx, cfg);
+                            module.connected(&client, &mctx, &db, cfg);
                         }
                     }
 
@@ -201,13 +203,13 @@ impl<'c, 'l> Builder<'c, 'l> {
                             ) {
                                 // .help with no modules specified
                                 Some(Trigger::Explicit("")) => {
-                                    let mut res = String::new();
+                                    let mut mods = String::new();
                                     for (_, name) in modules.keys() {
-                                        if res.is_empty() {
-                                            res.push_str(&name);
+                                        if mods.is_empty() {
+                                            mods.push_str(&name);
                                         } else {
-                                            res.push_str(", ");
-                                            res.push_str(&name);
+                                            mods.push_str(", ");
+                                            mods.push_str(&name);
                                         }
                                     }
                                     reply_priv!(mctx, msg, "Modules: {}", res);
@@ -216,9 +218,7 @@ impl<'c, 'l> Builder<'c, 'l> {
                                 Some(trigger) => {
                                     if let Some((_, (_, ref mut module))) =
                                         modules.iter_mut().find(|(_, (cfg, _))| {
-                                            cfg.triggers
-                                                .iter()
-                                                .any(|t| t.help_relevant(&trigger))
+                                            cfg.triggers.iter().any(|t| t.help_relevant(&trigger))
                                         })
                                     {
                                         reply_priv!(mctx, msg, "{}", module.help());
@@ -240,7 +240,7 @@ impl<'c, 'l> Builder<'c, 'l> {
                                         if let Some(t) =
                                             message::cfg_trigger_match(&msg, &cfg.triggers)
                                         {
-                                            module.received(&client, &mctx, cfg, &msg, t);
+                                            module.received(&client, &mctx, &db, cfg, &msg, t);
                                         }
                                     }
                                 }

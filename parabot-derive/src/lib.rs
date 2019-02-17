@@ -68,8 +68,8 @@ impl Parse for StructAttrs {
                     });
                     impls.extend(quote! {
                         fn connected(&mut self, client: &Arc<IrcClient>, mctx: &MessageContext,
-                                     cfg: &mut ModuleCfg) {
-                            self.impl_detail_handle_connected(client, mctx, cfg)
+                                     conn: &DbConn, cfg: &mut ModuleCfg) {
+                            self.impl_detail_handle_connected(client, mctx, conn, cfg)
                         }
                     });
                 }
@@ -79,8 +79,9 @@ impl Parse for StructAttrs {
                     });
                     impls.extend(quote! {
                         fn received(&mut self, client: &Arc<IrcClient>, mctx: &MessageContext,
-                                    cfg: &mut ModuleCfg, msg: &Message, trigger: Trigger) {
-                            self.impl_detail_handle_received(client, mctx, cfg, msg, trigger)
+                                    conn: &DbConn, cfg: &mut ModuleCfg, msg: &Message,
+                                    trigger: Trigger) {
+                            self.impl_detail_handle_received(client, mctx, conn, cfg, msg, trigger)
                         }
                     });
                 }
@@ -90,8 +91,8 @@ impl Parse for StructAttrs {
                     });
                     impls.extend(quote! {
                         fn pre_send(&mut self, client: &Arc<IrcClient>, mctx: &MessageContext,
-                                    cfg: &mut ModuleCfg, msg: &Message) {
-                            self.impl_detail_handle_pre_send(client, mctx, cfg, msg)
+                                    conn: &DbConn, cfg: &mut ModuleCfg, msg: &Message) {
+                            self.impl_detail_handle_pre_send(client, mctx, conn, cfg, msg)
                         }
                     });
                 }
@@ -101,8 +102,8 @@ impl Parse for StructAttrs {
                     });
                     impls.extend(quote! {
                         fn post_send(&mut self, client: &Arc<IrcClient>, mctx: &MessageContext,
-                                     cfg: &mut ModuleCfg, msg: &Message) {
-                            self.impl_detail_handle_post_send(client, mctx, cfg, msg)
+                                    conn: &DbConn, cfg: &mut ModuleCfg, msg: &Message) {
+                            self.impl_detail_handle_post_send(client, mctx, conn, cfg, msg)
                         }
                     });
                 }
@@ -174,12 +175,14 @@ impl Parse for FnAttrs {
                     impl_detail_handle_connected(&mut self,
                                                  client: &Arc<IrcClient>,
                                                  mctx: &MessageContext,
+                                                 conn: &DbConn,
                                                  cfg: &mut ModuleCfg)
             },
             "received" => quote! {
                     impl_detail_handle_received(&mut self,
                                                 client: &Arc<IrcClient>,
                                                 mctx: &MessageContext,
+                                                conn: &DbConn,
                                                 cfg: &mut ModuleCfg,
                                                 msg: &Message,
                                                 trigger: Trigger)
@@ -188,6 +191,7 @@ impl Parse for FnAttrs {
                     impl_detail_handle_pre_send(&mut self,
                                                 client: &Arc<IrcClient>,
                                                 mctx: &MessageContext,
+                                                conn: &DbConn,
                                                 cfg: &mut ModuleCfg,
                                                 msg: &Message)
             },
@@ -195,6 +199,7 @@ impl Parse for FnAttrs {
                     impl_detail_handle_post_send(&mut self,
                                                  client: &Arc<IrcClient>,
                                                  mctx: &MessageContext,
+                                                 conn: &DbConn,
                                                  cfg: &mut ModuleCfg,
                                                  msg: &Message)
             },
@@ -234,6 +239,9 @@ fn build_fn(args: TokenStream, parsed: ItemFn) -> TokenStream {
                         "MessageContext" => {
                             args.extend(quote! { mctx, });
                         }
+                        "DbConn" => {
+                            args.extend(quote! { conn, });
+                        }
                         "ModuleCfg" => {
                             args.extend(quote! { cfg, });
                         }
@@ -245,8 +253,8 @@ fn build_fn(args: TokenStream, parsed: ItemFn) -> TokenStream {
                                 Error::new(
                                     arg.ty.span(),
                                     "expected one type of: \
-                                     `&Arc<IrcClient>`, `&MessageContext`, `&mut ModuleCfg`, \
-                                     `&Message`, `Trigger`",
+                                     `&Arc<IrcClient>`, `&MessageContext`, `&DbConn`, \
+                                     `&mut ModuleCfg`, `&Message`, `Trigger`",
                                 )
                                 .to_compile_error(),
                             );
@@ -258,8 +266,8 @@ fn build_fn(args: TokenStream, parsed: ItemFn) -> TokenStream {
                         Error::new(
                             arg.ty.span(),
                             "expected one type of: \
-                             `&Arc<IrcClient>`, `&MessageContext`, `&mut ModuleCfg`, \
-                             `&Message`, `Trigger`",
+                             `&Arc<IrcClient>`, `&MessageContext`, `&DbConn`, \
+                             `&mut ModuleCfg`, `&Message`, `Trigger`",
                         )
                         .to_compile_error(),
                     );

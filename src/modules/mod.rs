@@ -15,7 +15,9 @@
 // You should have received a copy of the GNU General Public License
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
+use diesel::{sqlite::SqliteConnection, r2d2::ConnectionManager};
 use irc::client::IrcClient;
+use r2d2::PooledConnection;
 
 use std::sync::Arc;
 
@@ -33,9 +35,8 @@ pub use self::dice::Dice;
 
 pub use parabot_derive::module;
 
-#[inline]
 #[cfg(feature = "modules")]
-pub(crate) fn load_module(cfg: &mut ModuleCfg) -> Result<Option<Box<Module>>> {
+pub(crate) fn load_module(db: &DbConn, cfg: &mut ModuleCfg) -> Result<Option<Box<Module>>> {
     match &*cfg.name {
         "dice" => Ok(Some(Box::new(Dice::new()))),
         "choose" => Ok(Some(Box::new(Choose))),
@@ -43,6 +44,7 @@ pub(crate) fn load_module(cfg: &mut ModuleCfg) -> Result<Option<Box<Module>>> {
     }
 }
 
+pub type DbConn = PooledConnection<ConnectionManager<SqliteConnection>>;
 /// Key: Channel name, module name. Value: Module configuration, Module pointer
 pub(crate) type ModuleContext = HashMap<(String, String), (ModuleCfg, Box<Module>)>;
 
@@ -55,6 +57,7 @@ pub trait Module: Send {
         &mut self,
         _client: &Arc<IrcClient>,
         _mctx: &MessageContext,
+        _conn: &DbConn,
         _cfg: &mut ModuleCfg,
     ) {
         unreachable!()
@@ -64,6 +67,7 @@ pub trait Module: Send {
         &mut self,
         _client: &Arc<IrcClient>,
         _mctx: &MessageContext,
+        _conn: &DbConn,
         _cfg: &mut ModuleCfg,
         _msg: &'m Message,
         _trigger: Trigger<'m>,
@@ -75,9 +79,10 @@ pub trait Module: Send {
         &mut self,
         _client: &Arc<IrcClient>,
         _mctx: &MessageContext,
+        _conn: &DbConn,
         _cfg: &mut ModuleCfg,
         _msg: &Message,
-    ) -> bool {
+    ) {
         unreachable!()
     }
     #[inline]
@@ -85,6 +90,7 @@ pub trait Module: Send {
         &mut self,
         _client: &Arc<IrcClient>,
         _mctx: &MessageContext,
+        _conn: &DbConn,
         _cfg: &mut ModuleCfg,
         _msg: &Message,
     ) {

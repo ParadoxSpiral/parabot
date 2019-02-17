@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
-pub type Result<T> = ::std::result::Result<T, Error>;
+pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
@@ -25,44 +25,36 @@ pub enum Error {
     /// A module name could not be resolved to a module
     ModuleNotFound(String),
 
-    ConfigFormat(::toml::de::Error),
-    Sql(::diesel::result::Error),
-    SqlConnection(::diesel::result::ConnectionError),
-    Io(::std::io::Error),
-    Irc(::irc::error::IrcError),
+    ConfigFormat(toml::de::Error),
+    R2d2(r2d2::Error),
+    Io(std::io::Error),
+    Irc(irc::error::IrcError),
 }
 
-impl From<::toml::de::Error> for Error {
+impl From<toml::de::Error> for Error {
     #[inline]
-    fn from(e: ::toml::de::Error) -> Error {
+    fn from(e: toml::de::Error) -> Error {
         Error::ConfigFormat(e)
     }
 }
 
-impl From<::std::io::Error> for Error {
+impl From<std::io::Error> for Error {
     #[inline]
-    fn from(e: ::std::io::Error) -> Error {
+    fn from(e: std::io::Error) -> Error {
         Error::Io(e)
     }
 }
 
-impl From<::diesel::result::Error> for Error {
+impl From<r2d2::Error> for Error {
     #[inline]
-    fn from(e: ::diesel::result::Error) -> Error {
-        Error::Sql(e)
+    fn from(e: r2d2::Error) -> Error {
+        Error::R2d2(e)
     }
 }
 
-impl From<::diesel::result::ConnectionError> for Error {
+impl From<irc::error::IrcError> for Error {
     #[inline]
-    fn from(e: ::diesel::result::ConnectionError) -> Error {
-        Error::SqlConnection(e)
-    }
-}
-
-impl From<::irc::error::IrcError> for Error {
-    #[inline]
-    fn from(e: ::irc::error::IrcError) -> Error {
+    fn from(e: irc::error::IrcError) -> Error {
         Error::Irc(e)
     }
 }

@@ -79,7 +79,7 @@ pub enum Stage {
 #[derive(Debug, Clone)]
 pub enum Trigger<'msg> {
     /// The module is called on every message
-    Always(&'msg Message),
+    Always,
     /// The module is called when a type of command was received, e.g. `JOIN`
     Command(&'msg Command),
     /// The module is called when a specific string was at the start of a PRIVMSG, the data is what
@@ -138,7 +138,7 @@ pub(crate) fn cfg_trigger_match<'m>(
     for t in triggers {
         match t {
             ConfigTrigger::Always => {
-                return Some(Trigger::Always(msg));
+                return Some(Trigger::Always);
             }
             ConfigTrigger::Action(act) => {
                 if let Command::PRIVMSG(_, ref content) = msg.command {
