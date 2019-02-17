@@ -251,8 +251,7 @@ impl<'c, 'l> Builder<'c, 'l> {
                                         modules.iter_mut().find(|(_, (cfg, _))| {
                                             cfg.triggers
                                                 .iter()
-                                                .find(|t| t.help_relevant(&trigger))
-                                                .is_some()
+                                                .any(|t| t.help_relevant(&trigger))
                                         })
                                     {
                                         reply_priv!(mctx, msg, "{}", module.help());

@@ -43,19 +43,21 @@ impl Config {
         let mut toml: Config = toml::de::from_str(&s)?;
 
         // Test if all modules have unique names
-        if toml.servers.iter_mut().any(|s| {
+        let unique = toml.servers.iter_mut().any(|s| {
             s.channels.iter_mut().any(|c| {
                 let n = c.modules.len();
 
                 c.modules.sort_unstable_by(|m1, m2| m1.name.cmp(&m2.name));
                 c.modules.dedup_by(|m1, m2| m1.name == m2.name);
 
-                n != c.modules.len()
+                n == c.modules.len()
             })
-        }) {
-            Err(Error::ModuleDuplicate)
-        } else {
+        });
+
+        if unique {
             Ok(toml)
+        } else {
+            Err(Error::ModuleDuplicate)
         }
     }
 }
@@ -145,9 +147,9 @@ impl<'de> Visitor<'de> for TriggerVisitor {
     where
         E: de::Error,
     {
-        if s.starts_with(".") {
+        if s.starts_with('.') {
             Ok(ConfigTrigger::Explicit(s.to_lowercase()))
-        } else if s.starts_with("<") && s.ends_with(">") {
+        } else if s.starts_with('<') && s.ends_with('>') {
             let s = s.to_lowercase();
             if s == "<always>" {
                 Ok(ConfigTrigger::Always)

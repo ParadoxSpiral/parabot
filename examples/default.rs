@@ -6,6 +6,8 @@ use std::env;
 use std::path::Path;
 
 fn main() {
+    env_logger::init();
+
     let mut rt = Runtime::new().unwrap();
     let conns = Builder::new()
         .with_config_file(Path::new(&env::args().nth(1).unwrap_or_else(|| {
