@@ -109,7 +109,7 @@ pub(crate) enum ConfigTrigger {
 impl ConfigTrigger {
     pub(crate) fn help_relevant(&self, other: &Trigger) -> bool {
         match (self, other) {
-            (ConfigTrigger::Always, Trigger::Always(_)) => true,
+            (ConfigTrigger::Always, Trigger::Always) => true,
             // This returns true if the commands are of the same enum variant
             (ConfigTrigger::Command(c1), Trigger::Command(c2)) => {
                 c1 == &*String::from(*c2).split(' ').next().unwrap().to_lowercase()

@@ -22,48 +22,15 @@ extern crate regex;
 #[cfg(feature = "modules")]
 extern crate shlex;
 
-// FIXME: These should be in message, but fucking macro ordering
-#[macro_export]
-macro_rules! reply {
-    ($mctx:expr, $msg:ident, $($repl:expr),+) => {
-        $mctx.unbounded_send($msg.reply(format!($($repl),+))).unwrap();
-    }
-}
-
-#[macro_export]
-macro_rules! reply_priv {
-    ($mctx:expr, $msg:ident, $($repl:expr),+) => {
-        $mctx.unbounded_send($msg.reply_priv(format!($($repl),+))).unwrap();
-    }
-}
-
-#[macro_export]
-macro_rules! reply_priv_pub {
-    ($mctx:ident, $msg:ident, $($priv:expr),+; $($pub:expr),+) => {
-        $mctx.unbounded_send($msg.reply(if $msg.private() {
-            format!($($priv),+)
-        } else {
-            format!($($pub),+)
-        })).unwrap();
-    }
-}
-
-#[macro_export]
-macro_rules! no_mention {
-    ($str:expr) => {{
-        let mut eval: String = $str;
-        eval.insert(1, '\u{200B}');
-        eval
-    }};
-}
-
 pub mod config;
 pub mod error;
+#[macro_use]
 pub mod message;
 pub mod modules;
 pub mod prelude {
     pub use crate::{
         config::{Config, Module as ModuleCfg},
+        // FIXME: macros should be reexported, but for some reason they can't be
         message::{IrcMessageExt, Message, MessageContext, Stage, Trigger},
         modules::{module, Module},
         Builder,

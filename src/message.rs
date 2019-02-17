@@ -33,6 +33,40 @@ pub type MessageContext = Arc<mpsc::UnboundedSender<(Message, DueBy, SendMode)>>
 
 const MAX_PRIVMSG_LEN: usize = 510 - 9;
 
+#[macro_export]
+macro_rules! reply {
+    ($mctx:expr, $msg:ident, $($repl:expr),+) => {
+        $mctx.unbounded_send($msg.reply(format!($($repl),+))).unwrap();
+    }
+}
+
+#[macro_export]
+macro_rules! reply_priv {
+    ($mctx:expr, $msg:ident, $($repl:expr),+) => {
+        $mctx.unbounded_send($msg.reply_priv(format!($($repl),+))).unwrap();
+    }
+}
+
+#[macro_export]
+macro_rules! reply_priv_pub {
+    ($mctx:ident, $msg:ident, $($priv:expr),+; $($pub:expr),+) => {
+        $mctx.unbounded_send($msg.reply(if $msg.private() {
+            format!($($priv),+)
+        } else {
+            format!($($pub),+)
+        })).unwrap();
+    }
+}
+
+#[macro_export]
+macro_rules! no_mention {
+    ($str:expr) => {{
+        let mut eval: String = $str;
+        eval.insert(1, '\u{200B}');
+        eval
+    }};
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 /// The stages, or points in time, at which a module can be called
 pub enum Stage {
