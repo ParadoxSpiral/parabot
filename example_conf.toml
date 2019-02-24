@@ -1,16 +1,16 @@
 database = "/home/USER/.local/share/parabot/parabot.db"
 
 [[server]]
-address = "irc.mozilla.org"
+address = "irc.rizon.net"
 port = 6697
 # optional: password = "test123"
-nick = "parabot"
-nick_password = "test123"
+nick = "parabot-example"
+# optional: nick_password = "test123"
 # optional: max_burst_messages = 4
 # optional: burst_window_length = 4 # Time between bursts in seconds
 # optional: use_ssl = true
 	[[server.channel]]
-	name = "#rust-spam"
+	name = "#parabot-testing"
 	# optional: password = "channel_key"
 		# Possible module triggers: <ALWAYS>, .explicit, <ACTION name>, <DOMAINS "domain1.com","domain2.com",!"dom3.com">, <COMMAND JOIN>, <COMMAND PART>
 		[[server.channel.module]]
