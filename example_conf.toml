@@ -2,13 +2,13 @@ database = "/home/USER/.local/share/parabot/parabot.db"
 
 [[server]]
 address = "irc.mozilla.org"
+port = 6697
 # optional: password = "test123"
 nick = "parabot"
 nick_password = "test123"
-max_burst_messages = 4
-burst_window_length = 4 # Time between bursts in seconds
-use_ssl = true
-port = 6697
+# optional: max_burst_messages = 4
+# optional: burst_window_length = 4 # Time between bursts in seconds
+# optional: use_ssl = true
 	[[server.channel]]
 	name = "#rust-spam"
 	# optional: password = "channel_key"

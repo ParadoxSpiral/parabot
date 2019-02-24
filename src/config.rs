@@ -65,13 +65,13 @@ impl Config {
 #[derive(Deserialize, Debug)]
 pub struct Server {
     pub address: String,
+    pub port: Option<u16>,
     password: Option<String>,
     pub nick: String,
     nick_password: Option<String>,
-    pub max_burst_messages: u32,
-    pub burst_window_length: u32,
-    pub use_ssl: bool,
-    pub port: u16,
+    pub max_burst_messages: Option<u32>,
+    pub burst_window_length: Option<u32>,
+    pub use_ssl: Option<bool>,
 
     #[serde(rename = "channel")]
     pub channels: Vec<Channel>,
@@ -188,15 +188,15 @@ impl Server {
     pub(crate) fn as_irc_config(&self) -> IrcConfig {
         IrcConfig {
             server: Some(self.address.clone()),
-            port: Some(self.port),
-            use_ssl: Some(self.use_ssl),
+            port: self.port.clone(),
+            use_ssl: Some(self.use_ssl.unwrap_or(true)),
 
             nickname: Some(self.nick.clone()),
             nick_password: self.nick_password.clone(),
             password: self.password.clone(),
 
-            max_messages_in_burst: Some(self.max_burst_messages),
-            burst_window_length: Some(self.burst_window_length),
+            max_messages_in_burst: self.max_burst_messages.clone(),
+            burst_window_length: self.burst_window_length.clone(),
 
             channels: Some(self.channels.iter().map(|c| c.name.clone()).collect()),
             channel_keys: {
