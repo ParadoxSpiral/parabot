@@ -23,21 +23,21 @@ port = 6697
 
 		[[server.channel.module]]
 		name = "duckduckgo"
-		triggers = [".ddg", ".duckduckgo", "<DOMAINS 'duckduckgo.com'>"]
+		triggers = [".ddg", ".duckduckgo", "<DOMAINS duckduckgo.com>"]
 
 		[[server.channel.module]]
 		name = "generic-url"
-		triggers = ["<DOMAINS !'duckduckgo.com',!'google.com',!'maps.google.com',!'jisho.org',!'wolframalpha.com',!'youtube.com',!'youtu.be'>"]
+		triggers = ["<DOMAINS !duckduckgo.com,!google.com,!maps.google.com,!jisho.org,!wolframalpha.com,!youtube.com,!youtu.be>"]
 
 		[[server.channel.module]]
 		name = "google"
 		search_id = "id" # a http://cse.google.com/all id
 		search_key = "key" # a https://developers.google.com/custom-search/json-api/v1/introduction key
-		triggers = [".g", ".google", "<DOMAINS 'google.com'>"]
+		triggers = [".g", ".google", "<DOMAINS google.com>"]
 
 		[[server.channel.module]]
 		name = "jisho"
-		triggers = [".jisho", "<DOMAINS 'jisho.org'>"]
+		triggers = [".jisho", "<DOMAINS jisho.org>"]
 
 		[[server.channel.module]]
 		name = "weather"
@@ -48,9 +48,9 @@ port = 6697
 		[[server.channel.module]]
 		name = "wolfram-alpha"
 		appid = "appid" # a https://www.wolframalpha.com/ appid
-		triggers = [".wa", "<DOMAINS 'wolframalpha.com'>"]
+		triggers = [".wa", "<DOMAINS wolframalpha.com>"]
 
 		[[server.channel.module]]
 		name = "youtube"
 		api_key = "key" # a https://console.developers.google.com api key
-		triggers = ["<DOMAINS 'youtube.com','youtu.be'>"]
+		triggers = ["<DOMAINS youtube.com,youtu.be>"]
