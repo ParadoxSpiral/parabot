@@ -40,7 +40,11 @@ impl Config {
         let mut file = ::std::fs::File::open(path)?;
         let mut s = String::new();
         file.read_to_string(&mut s)?;
-        let mut toml: Config = toml::de::from_str(&s)?;
+
+        Self::from_str(&s)
+    }
+    pub fn from_str(s: &str) -> Result<Config> {
+        let mut toml: Config = toml::de::from_str(s)?;
 
         // Test if all modules have unique names
         let unique = toml.servers.iter_mut().any(|s| {
