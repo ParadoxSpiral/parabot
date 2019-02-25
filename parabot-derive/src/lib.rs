@@ -25,7 +25,8 @@ use syn::{
     parse::{Error, Parse, ParseStream, Result},
     parse_macro_input,
     spanned::Spanned,
-    FnArg, ItemFn, ItemStruct, LitStr, Path, PathSegment, Token, Type, TypePath, TypeReference,
+    FnArg, GenericArgument, ItemFn, ItemStruct, LitStr, Path, PathArguments, PathSegment, Token,
+    Type, TypePath, TypeReference,
 };
 
 #[proc_macro_attribute]
@@ -67,7 +68,7 @@ impl Parse for StructAttrs {
                         Stage::Connected => true,
                     });
                     impls.extend(quote! {
-                        fn connected(&mut self, client: &Arc<IrcClient>, mctx: &MessageContext,
+                        fn connected(&mut self, client: &Arc<IrcClient>, mctx: &Arc<MessageContext>,
                                      conn: &DbConn, cfg: &mut ModuleCfg) {
                             self.impl_detail_handle_connected(client, mctx, conn, cfg)
                         }
@@ -78,7 +79,7 @@ impl Parse for StructAttrs {
                         Stage::Received => true,
                     });
                     impls.extend(quote! {
-                        fn received(&mut self, client: &Arc<IrcClient>, mctx: &MessageContext,
+                        fn received(&mut self, client: &Arc<IrcClient>, mctx: &Arc<MessageContext>,
                                     conn: &DbConn, cfg: &mut ModuleCfg, msg: &Message,
                                     trigger: Trigger) {
                             self.impl_detail_handle_received(client, mctx, conn, cfg, msg, trigger)
@@ -90,7 +91,7 @@ impl Parse for StructAttrs {
                         Stage::PreSend => true,
                     });
                     impls.extend(quote! {
-                        fn pre_send(&mut self, client: &Arc<IrcClient>, mctx: &MessageContext,
+                        fn pre_send(&mut self, client: &Arc<IrcClient>, mctx: &Arc<MessageContext>,
                                     conn: &DbConn, cfg: &mut ModuleCfg, msg: &Message) {
                             self.impl_detail_handle_pre_send(client, mctx, conn, cfg, msg)
                         }
@@ -101,7 +102,7 @@ impl Parse for StructAttrs {
                         Stage::PostSend => true,
                     });
                     impls.extend(quote! {
-                        fn post_send(&mut self, client: &Arc<IrcClient>, mctx: &MessageContext,
+                        fn post_send(&mut self, client: &Arc<IrcClient>, mctx: &Arc<MessageContext>,
                                     conn: &DbConn, cfg: &mut ModuleCfg, msg: &Message) {
                             self.impl_detail_handle_post_send(client, mctx, conn, cfg, msg)
                         }
@@ -174,14 +175,14 @@ impl Parse for FnAttrs {
             "connected" => quote! {
                     impl_detail_handle_connected(&mut self,
                                                  client: &Arc<IrcClient>,
-                                                 mctx: &MessageContext,
+                                                 mctx: &Arc<MessageContext>,
                                                  conn: &DbConn,
                                                  cfg: &mut ModuleCfg)
             },
             "received" => quote! {
                     impl_detail_handle_received(&mut self,
                                                 client: &Arc<IrcClient>,
-                                                mctx: &MessageContext,
+                                                mctx: &Arc<MessageContext>,
                                                 conn: &DbConn,
                                                 cfg: &mut ModuleCfg,
                                                 msg: &Message,
@@ -190,7 +191,7 @@ impl Parse for FnAttrs {
             "pre_send" => quote! {
                     impl_detail_handle_pre_send(&mut self,
                                                 client: &Arc<IrcClient>,
-                                                mctx: &MessageContext,
+                                                mctx: &Arc<MessageContext>,
                                                 conn: &DbConn,
                                                 cfg: &mut ModuleCfg,
                                                 msg: &Message)
@@ -198,7 +199,7 @@ impl Parse for FnAttrs {
             "post_send" => quote! {
                     impl_detail_handle_post_send(&mut self,
                                                  client: &Arc<IrcClient>,
-                                                 mctx: &MessageContext,
+                                                 mctx: &Arc<MessageContext>,
                                                  conn: &DbConn,
                                                  cfg: &mut ModuleCfg,
                                                  msg: &Message)
@@ -221,6 +222,17 @@ fn build_fn(args: TokenStream, parsed: ItemFn) -> TokenStream {
 
     let mut args = TokenStream2::new();
     let mut iter = parsed.decl.inputs.iter();
+
+    let err = |span| {
+        Error::new(
+            span,
+            "expected one type of: \
+             `&Arc<IrcClient>`, `&Arc<MessageContext>`, `&DbConn`, \
+             `&mut ModuleCfg`, `&Message`, `Trigger`",
+        )
+        .to_compile_error()
+    };
+
     while let Some(FnArg::Captured(arg)) = iter.next() {
         match &arg.ty {
             Type::Reference(TypeReference { elem, .. }) => match &**elem {
@@ -228,16 +240,44 @@ fn build_fn(args: TokenStream, parsed: ItemFn) -> TokenStream {
                     path: Path { segments, .. },
                     ..
                 }) => {
-                    let PathSegment { ref ident, .. } = segments[0];
+                    let PathSegment {
+                        ref ident,
+                        ref arguments,
+                    } = segments[0];
                     match &*ident.to_string() {
                         ty if ty == &target.to_string() => {
                             args.extend(quote! { self, });
                         }
                         "Arc" => {
-                            args.extend(quote! { client, });
-                        }
-                        "MessageContext" => {
-                            args.extend(quote! { mctx, });
+                            let arguments =
+                                if let PathArguments::AngleBracketed(arguments) = arguments {
+                                    arguments
+                                } else {
+                                    args.extend(err(arguments.span()));
+                                    continue;
+                                };
+                            match &arguments.args[0] {
+                                GenericArgument::Type(Type::Path(TypePath {
+                                    path: Path { segments, .. },
+                                    ..
+                                })) => {
+                                    let PathSegment { ref ident, .. } = segments[0];
+                                    match &*ident.to_string() {
+                                        "IrcClient" => {
+                                            args.extend(quote! { client, });
+                                        }
+                                        "MessageContext" => {
+                                            args.extend(quote! { mctx, });
+                                        }
+                                        _ => {
+                                            args.extend(err(ident.span()));
+                                        }
+                                    }
+                                }
+                                _ => {
+                                    args.extend(err(arg.ty.span()));
+                                }
+                            }
                         }
                         "DbConn" => {
                             args.extend(quote! { conn, });
@@ -249,28 +289,12 @@ fn build_fn(args: TokenStream, parsed: ItemFn) -> TokenStream {
                             args.extend(quote! { msg, });
                         }
                         _ => {
-                            args.extend(
-                                Error::new(
-                                    arg.ty.span(),
-                                    "expected one type of: \
-                                     `&Arc<IrcClient>`, `&MessageContext`, `&DbConn`, \
-                                     `&mut ModuleCfg`, `&Message`, `Trigger`",
-                                )
-                                .to_compile_error(),
-                            );
+                            args.extend(err(ident.span()));
                         }
                     }
                 }
                 _ => {
-                    args.extend(
-                        Error::new(
-                            arg.ty.span(),
-                            "expected one type of: \
-                             `&Arc<IrcClient>`, `&MessageContext`, `&DbConn`, \
-                             `&mut ModuleCfg`, `&Message`, `Trigger`",
-                        )
-                        .to_compile_error(),
-                    );
+                    args.extend(err(arg.ty.span()));
                 }
             },
             Type::Path(TypePath {
@@ -283,28 +307,12 @@ fn build_fn(args: TokenStream, parsed: ItemFn) -> TokenStream {
                         args.extend(quote! { trigger, });
                     }
                     _ => {
-                        args.extend(
-                            Error::new(
-                                arg.ty.span(),
-                                "expected one type of: \
-                                 `&Arc<IrcClient>`, `&MessageContext`, `&mut ModuleCfg`, \
-                                 `&Message`, `Trigger`",
-                            )
-                            .to_compile_error(),
-                        );
+                        args.extend(err(ident.span()));
                     }
                 }
             }
             _ => {
-                args.extend(
-                    Error::new(
-                        arg.ty.span(),
-                        "expected one type of: \
-                         `&Arc<IrcClient>`, `&MessageContext`, `&mut ModuleCfg`, \
-                         `&Message`, `Trigger`",
-                    )
-                    .to_compile_error(),
-                );
+                args.extend(err(arg.ty.span()));
             }
         }
     }

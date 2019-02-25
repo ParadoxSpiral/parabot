@@ -25,46 +25,36 @@ use irc::{
 use linkify::{LinkFinder, LinkKind};
 use unicode_segmentation::UnicodeSegmentation;
 
-use std::sync::Arc;
+use std::fmt::Display;
 
 use crate::config::ConfigTrigger;
 
-pub type MessageContext = Arc<mpsc::UnboundedSender<(Message, DueBy, SendMode)>>;
-
 const MAX_PRIVMSG_LEN: usize = 510 - 9;
 
-#[macro_export]
-macro_rules! reply {
-    ($mctx:expr, $msg:ident, $($repl:expr),+) => {
-        $mctx.unbounded_send($msg.reply(format!($($repl),+))).unwrap();
+pub struct MessageContext(pub mpsc::UnboundedSender<(Message, DueBy, SendMode)>);
+impl MessageContext {
+    #[inline]
+    pub fn reply(&self, msg: &Message, reply: impl Display) {
+        self.0
+            .unbounded_send(msg.reply(format!("{}", reply)))
+            .unwrap();
     }
-}
-
-#[macro_export]
-macro_rules! reply_priv {
-    ($mctx:expr, $msg:ident, $($repl:expr),+) => {
-        $mctx.unbounded_send($msg.reply_priv(format!($($repl),+))).unwrap();
+    #[inline]
+    pub fn reply_priv(&self, msg: &Message, reply: impl Display) {
+        self.0
+            .unbounded_send(msg.reply_priv(format!("{}", reply)))
+            .unwrap();
     }
-}
-
-#[macro_export]
-macro_rules! reply_priv_pub {
-    ($mctx:ident, $msg:ident, $($priv:expr),+; $($pub:expr),+) => {
-        $mctx.unbounded_send($msg.reply(if $msg.private() {
-            format!($($priv),+)
+    #[inline]
+    pub fn reply_priv_pub(&self, msg: &Message, pr: impl Display, pu: impl Display) {
+        if msg.private() {
+            self.0
+                .unbounded_send(msg.reply_priv(format!("{}", pr)))
+                .unwrap();
         } else {
-            format!($($pub),+)
-        })).unwrap();
+            self.0.unbounded_send(msg.reply(format!("{}", pu))).unwrap();
+        }
     }
-}
-
-#[macro_export]
-macro_rules! no_mention {
-    ($str:expr) => {{
-        let mut eval: String = $str;
-        eval.insert(1, '\u{200B}');
-        eval
-    }};
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -95,6 +85,7 @@ pub trait IrcMessageExt {
     fn private(&self) -> bool;
     fn reply(&self, content: String) -> (Message, DueBy, SendMode);
     fn reply_priv(&self, content: String) -> (Message, DueBy, SendMode);
+    fn nick_padded(&self) -> String;
 }
 
 impl IrcMessageExt for Message {
@@ -102,7 +93,6 @@ impl IrcMessageExt for Message {
     fn private(&self) -> bool {
         self.response_target().eq(&self.source_nickname())
     }
-
     #[inline]
     fn reply(&self, content: String) -> (Message, DueBy, SendMode) {
         (
@@ -115,7 +105,6 @@ impl IrcMessageExt for Message {
             SendMode::Split,
         )
     }
-
     #[inline]
     fn reply_priv(&self, content: String) -> (Message, DueBy, SendMode) {
         (
@@ -127,6 +116,12 @@ impl IrcMessageExt for Message {
             DueBy::Now,
             SendMode::Split,
         )
+    }
+    #[inline]
+    fn nick_padded(&self) -> String {
+        let mut nick = self.source_nickname().unwrap().to_owned();
+        nick.insert(1, '\u{200B}');
+        nick
     }
 }
 

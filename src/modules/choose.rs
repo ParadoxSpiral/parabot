@@ -18,6 +18,8 @@
 use rand::{seq::SliceRandom, thread_rng};
 use shlex;
 
+use std::sync::Arc;
+
 use crate::prelude::*;
 
 // We declare this struct as the state of a module, that has the given (mandatory) help message,
@@ -30,14 +32,14 @@ pub struct Choose;
 // we can omit ones we don't need to keep our definition simpler (in this case &mut Choose,
 // &Arc<IrcClient>, &mut ModuleCfg)
 #[module(Choose, received)]
-fn received(mctx: &MessageContext, msg: &Message, trigger: Trigger) {
+fn received(mctx: &Arc<MessageContext>, msg: &Message, trigger: Trigger) {
     // This module only uses the explicit trigger type, i.e. `.choose something or another`
     if let Trigger::Explicit(opts) = trigger {
         let split = shlex::split(opts).unwrap();
         let choice = split.choose(&mut thread_rng()).unwrap();
         // The reply macro sends either to a channel or in a query, depending how the msg was sent
         // to parabot. The message will be split if too long, and sent ASAP.
-        reply!(mctx, msg, "{}", choice)
+        mctx.reply(msg, choice.to_owned());
     } else {
         panic!("choose module's triggers wrongly configured")
     }

@@ -19,6 +19,8 @@ use rand::distributions::{Distribution, Uniform};
 use rand::thread_rng;
 use regex::Regex;
 
+use std::sync::Arc;
+
 use crate::prelude::*;
 
 #[module(
@@ -39,7 +41,7 @@ impl Dice {
 }
 
 #[module(Dice, received)]
-fn received(state: &mut Dice, mctx: &MessageContext, msg: &Message, trigger: Trigger) {
+fn received(state: &mut Dice, mctx: &Arc<MessageContext>, msg: &Message, trigger: Trigger) {
     let to_roll = match trigger {
         Trigger::Explicit(r) => r,
         Trigger::Action(r) => r,
@@ -105,8 +107,8 @@ fn received(state: &mut Dice, mctx: &MessageContext, msg: &Message, trigger: Tri
     }
 
     if err.is_empty() {
-        reply_priv_pub!(mctx, msg, "{}", roll; "{} rolled {}", no_mention!(msg.source_nickname().unwrap().to_owned()), roll);
+        mctx.reply_priv_pub(msg, roll, format!("{} rolled {}", msg.nick_padded(), roll))
     } else {
-        reply!(mctx, msg, "{}", err);
+        mctx.reply(msg, err);
     }
 }

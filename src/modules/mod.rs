@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
-use diesel::{sqlite::SqliteConnection, r2d2::ConnectionManager};
+use diesel::{r2d2::ConnectionManager, sqlite::SqliteConnection};
 use irc::client::IrcClient;
 use r2d2::PooledConnection;
 
@@ -56,7 +56,7 @@ pub trait Module: Send {
     fn connected(
         &mut self,
         _client: &Arc<IrcClient>,
-        _mctx: &MessageContext,
+        _mctx: &Arc<MessageContext>,
         _conn: &DbConn,
         _cfg: &mut ModuleCfg,
     ) {
@@ -66,7 +66,7 @@ pub trait Module: Send {
     fn received<'m>(
         &mut self,
         _client: &Arc<IrcClient>,
-        _mctx: &MessageContext,
+        _mctx: &Arc<MessageContext>,
         _conn: &DbConn,
         _cfg: &mut ModuleCfg,
         _msg: &'m Message,
@@ -78,7 +78,7 @@ pub trait Module: Send {
     fn pre_send(
         &mut self,
         _client: &Arc<IrcClient>,
-        _mctx: &MessageContext,
+        _mctx: &Arc<MessageContext>,
         _conn: &DbConn,
         _cfg: &mut ModuleCfg,
         _msg: &Message,
@@ -89,7 +89,7 @@ pub trait Module: Send {
     fn post_send(
         &mut self,
         _client: &Arc<IrcClient>,
-        _mctx: &MessageContext,
+        _mctx: &Arc<MessageContext>,
         _conn: &DbConn,
         _cfg: &mut ModuleCfg,
         _msg: &Message,

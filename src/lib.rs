@@ -24,13 +24,11 @@ extern crate shlex;
 
 pub mod config;
 pub mod error;
-#[macro_use]
 pub mod message;
 pub mod modules;
 pub mod prelude {
     pub use crate::{
         config::{Config, Module as ModuleCfg},
-        // FIXME: macros should be reexported, but for some reason they can't be
         message::{IrcMessageExt, Message, MessageContext, Stage, Trigger},
         modules::{module, DbConn, Module},
         Builder,
@@ -158,7 +156,7 @@ impl<'c, 'l> Builder<'c, 'l> {
 
                     let client = Arc::new(client.0);
                     let (mctx, mctx_receiver) = mpsc::unbounded();
-                    let mctx = Arc::new(mctx);
+                    let mctx = Arc::new(MessageContext(mctx));
 
                     for (ref mut cfg, module) in modules.values_mut() {
                         if module.handles(Stage::Connected) {
@@ -212,7 +210,7 @@ impl<'c, 'l> Builder<'c, 'l> {
                                             mods.push_str(&name);
                                         }
                                     }
-                                    reply_priv!(mctx, msg, "Modules: {}", res);
+                                    mctx.reply_priv(&msg, format!("Modules: {}", mods));
                                 }
                                 // Other .help
                                 Some(trigger) => {
@@ -221,14 +219,9 @@ impl<'c, 'l> Builder<'c, 'l> {
                                             cfg.triggers.iter().any(|t| t.help_relevant(&trigger))
                                         })
                                     {
-                                        reply_priv!(mctx, msg, "{}", module.help());
+                                        mctx.reply_priv(&msg, module.help());
                                     } else {
-                                        reply_priv!(
-                                            mctx,
-                                            msg,
-                                            "{}",
-                                            "No module with that alias found"
-                                        )
+                                        mctx.reply_priv(&msg, "No module with that alias found");
                                     }
                                 }
                                 // Regular message
