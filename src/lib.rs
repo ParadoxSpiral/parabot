@@ -100,7 +100,7 @@ impl<'c, 'l> Builder<'c, 'l> {
     /// #Panics
     /// * No config file was provided
     /// * Default modules were disabled, and no module loader was specified
-    pub fn build(self) -> Result<Vec<impl Future<Item = (), Error = ()>>> {
+    pub fn build(self) -> Result<impl Future<Item = (), Error = ()>> {
         let mut config = match self.config.expect("No config file provided to builder") {
             ConfigKind::Parsed(c) => c,
             ConfigKind::File(p) => Config::from_path(p)?,
@@ -116,85 +116,80 @@ impl<'c, 'l> Builder<'c, 'l> {
 
         // Setup modules
         let db = db_pool.get()?;
-        let mut all_modules = Vec::with_capacity(config.servers.len());
-        for server in &mut config.servers {
-            let mut modules = ModuleContext::new();
-            for channel in &mut server.channels {
-                for mut cfg in &mut channel.modules {
-                    #[cfg(feature = "modules")]
-                    let module = if let Some(ref loader) = self.loader {
-                        loader(&db, &mut cfg)?
-                            .map_or_else(|| modules::load_module(&db, &mut cfg), |v| Ok(Some(v)))?
-                            .ok_or_else(|| Error::ModuleNotFound(cfg.name.clone()))?
-                    } else {
-                        modules::load_module(&db, &mut cfg)?
-                            .ok_or_else(|| Error::ModuleNotFound(cfg.name.clone()))?
-                    };
-                    #[cfg(not(feature = "modules"))]
-                    let module =
-                        loader(&mut cfg)?.ok_or_else(|| Error::ModuleNotFound(cfg.name.clone()))?;
+        let mut modules = ModuleContext::new();
+        for channel in &mut config.channels {
+            for mut cfg in &mut channel.modules {
+                #[cfg(feature = "modules")]
+                let module = if let Some(ref loader) = self.loader {
+                    loader(&db, &mut cfg)?
+                        .map_or_else(|| modules::load_module(&db, &mut cfg), |v| Ok(Some(v)))?
+                        .ok_or_else(|| Error::ModuleNotFound(cfg.name.clone()))?
+                } else {
+                    modules::load_module(&db, &mut cfg)?
+                        .ok_or_else(|| Error::ModuleNotFound(cfg.name.clone()))?
+                };
+                #[cfg(not(feature = "modules"))]
+                let module =
+                    loader(&mut cfg)?.ok_or_else(|| Error::ModuleNotFound(cfg.name.clone()))?;
 
-                    modules.insert(
-                        (channel.name.clone(), cfg.name.clone()),
-                        (cfg.clone(), module),
-                    );
-                }
+                modules.insert(
+                    (channel.name.clone(), cfg.name.clone()),
+                    (cfg.clone(), module),
+                );
             }
-            all_modules.push(modules);
         }
-        drop(db);
 
-        let mut conns = Vec::with_capacity(config.servers.len());
-        for (server, mut modules) in config.servers.into_iter().zip(all_modules.into_iter()) {
-            let db = db_pool.get()?;
-            let fut = IrcClient::new_future(server.as_irc_config())?
-                .map_err(|e| panic!("{}", e))
-                .map(move |client| {
-                    // This is the future that will drive message sends to completion
-                    tokio::spawn(client.1.map_err(|e| panic!("{}", e)));
-                    client.0.identify().unwrap();
+        Ok(IrcClient::new_future(config.as_irc_config())?
+            .map_err(|e| panic!("{}", e))
+            .map(move |client| {
+                // This is the future that will drive message sends to completion
+                tokio::spawn(client.1.map_err(|e| panic!("{}", e)));
+                client.0.identify().unwrap();
 
-                    let client = Arc::new(client.0);
-                    let (mctx, mctx_receiver) = mpsc::unbounded();
-                    let mctx = Arc::new(MessageContext(mctx));
+                let client = Arc::new(client.0);
+                let (mctx, mctx_receiver) = mpsc::unbounded();
+                let mctx = Arc::new(MessageContext(mctx));
 
-                    for (ref mut cfg, module) in modules.values_mut() {
-                        if module.handles(Stage::Connected) {
-                            module.connected(&client, &mctx, &db, cfg);
-                        }
+                for (ref mut cfg, module) in modules.values_mut() {
+                    if module.handles(Stage::Connected) {
+                        module.connected(&client, &mctx, &db, cfg);
                     }
+                }
 
-                    // Deliver ready messages to send future
-                    // TODO: Pre/Post-MessageSend
-                    let client2 = Arc::clone(&client);
-                    tokio::spawn(mctx_receiver.for_each(move |(msg, due, mode)| {
-                        match due {
-                            message::DueBy::Now => {
+                // Deliver ready messages to send future
+                // TODO: Pre/Post-MessageSend
+                let client2 = Arc::clone(&client);
+                tokio::spawn(mctx_receiver.for_each(move |(msg, due, mode)| {
+                    match due {
+                        message::DueBy::Now => {
+                            message::send(&client2, &msg, &mode);
+                        }
+                        message::DueBy::At(at) => {
+                            // This will fail on a negative duration, i.e. if at < now
+                            if let Ok(dur) = (at - Utc::now()).to_std() {
+                                let now_std = Instant::now();
+                                let client3 = Arc::clone(&client2);
+                                tokio::spawn(
+                                    Delay::new(now_std + dur).map_err(|e| panic!("{}", e)).map(
+                                        move |_| {
+                                            message::send(&client3, &msg, &mode);
+                                        },
+                                    ),
+                                );
+                            } else {
                                 message::send(&client2, &msg, &mode);
                             }
-                            message::DueBy::At(at) => {
-                                // This will fail on a negative duration, i.e. if at < now
-                                if let Ok(dur) = (at - Utc::now()).to_std() {
-                                    let now_std = Instant::now();
-                                    let client3 = Arc::clone(&client2);
-                                    tokio::spawn(
-                                        Delay::new(now_std + dur).map_err(|e| panic!("{}", e)).map(
-                                            move |_| {
-                                                message::send(&client3, &msg, &mode);
-                                            },
-                                        ),
-                                    );
-                                } else {
-                                    message::send(&client2, &msg, &mode);
-                                }
-                            }
-                        };
+                        }
+                    };
 
-                        Ok(())
-                    }));
+                    Ok(())
+                }));
 
-                    tokio::spawn(client.stream().map_err(|e| panic!("{}", e)).for_each(
-                        move |msg| {
+                tokio::spawn(
+                    client
+                        .stream()
+                        .map_err(|e| panic!("{}", e))
+                        .for_each(move |msg| {
                             match message::cfg_trigger_match(
                                 &msg,
                                 &[ConfigTrigger::Explicit(".help".to_string())],
@@ -240,13 +235,8 @@ impl<'c, 'l> Builder<'c, 'l> {
                             }
 
                             Ok(())
-                        },
-                    ));
-                });
-
-            conns.push(fut);
-        }
-
-        Ok(conns)
+                        }),
+                );
+            }))
     }
 }

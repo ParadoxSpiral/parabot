@@ -3,14 +3,14 @@ use tokio::prelude::*;
 use tokio::runtime::Runtime;
 
 static CONFIG: &str = r##"database = "parabot_empty.db"
-[[server]]
-    address = "irc.rizon.net"
-    port = 6697
-    nick = "parabot-example"
-    use_ssl = true
-[[server.channel]]
-    name = "#parabot-testing"
-[[server.channel.module]]
+address = "irc.rizon.net"
+port = 6697
+nick = "parabot-example"
+use_ssl = true
+
+[[channel]]
+name = "#parabot-testing"
+    [[channel.module]]
     name = "logger"
     triggers = ["<ALWAYS>"]
 "##;

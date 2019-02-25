@@ -8,8 +8,7 @@ Yet another modular irc bot (framework)
 - SQLite 3
 
 # Usage
-Run the default modules with `cargo run --release --example default`.
-A configuration file (see example\_conf.toml) is expected at either `$XDG_CONFIG_HOME`|`~/.config``/parabot/conf.toml`.
+Run the default modules with `cargo run --release --example default`. A configuration file (see example\_conf.toml) per server is expected at either `$XDG_CONFIG_HOME`|`~/.config``/parabot/conf.toml`. Note that you must use a different sqlite database per server, because modules may assume that they exist as such, e.g. the weather module assumes that nicknames stored in it are unique.
 
 # Modules
 A module is a struct that provides some funtions that are (potentially) called during various stages: when first connected to the server, on a received message, and before/after a message is sent. Each module has a configurable list of triggers that when matched in a received message, are handed to the module, e.g. `.command` or `/me command`.

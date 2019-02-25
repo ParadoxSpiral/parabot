@@ -2,25 +2,22 @@ use parabot::prelude::*;
 use tokio::prelude::*;
 use tokio::runtime::Runtime;
 
-use std::env;
-use std::path::Path;
+use std::{error::Error, fs, path::Path};
 
-fn main() {
+fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
-    let mut rt = Runtime::new().unwrap();
-    let conns = Builder::new()
-        .with_config_file(Path::new(&env::args().nth(1).unwrap_or_else(|| {
-            shellexpand::full("$XDG_CONFIG_HOME/parabot/conf.toml")
-                .unwrap_or_else(|_| shellexpand::tilde("~/.config/parabot/conf.toml"))
-                .into_owned()
-        })))
-        .build()
-        .unwrap();
+    let config_base = shellexpand::full("$XDG_CONFIG_HOME/parabot/")
+        .unwrap_or_else(|_| shellexpand::tilde("~/.config/parabot/"))
+        .into_owned();
 
-    for conn in conns {
-        rt.spawn(conn);
+    let mut rt = Runtime::new()?;
+    for entry in fs::read_dir(Path::new(&config_base))? {
+        let conf = entry?.path();
+        if conf.is_file() {
+            rt.spawn(Builder::new().with_config_file(&conf).build().unwrap());
+        }
     }
-
     rt.shutdown_on_idle().wait().unwrap();
+    Ok(())
 }

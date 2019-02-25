@@ -30,8 +30,17 @@ use crate::{error::*, message::Trigger};
 pub struct Config {
     pub database: String,
 
-    #[serde(rename = "server")]
-    pub servers: Vec<Server>,
+    pub address: String,
+    pub port: Option<u16>,
+    password: Option<String>,
+    pub nick: String,
+    nick_password: Option<String>,
+    pub max_burst_messages: Option<u32>,
+    pub burst_window_length: Option<u32>,
+    pub use_ssl: Option<bool>,
+
+    #[serde(rename = "channel")]
+    pub channels: Vec<Channel>,
 }
 
 impl Config {
@@ -47,15 +56,13 @@ impl Config {
         let mut toml: Config = toml::de::from_str(s)?;
 
         // Test if all modules have unique names
-        let unique = toml.servers.iter_mut().any(|s| {
-            s.channels.iter_mut().any(|c| {
-                let n = c.modules.len();
+        let unique = toml.channels.iter_mut().any(|c| {
+            let n = c.modules.len();
 
-                c.modules.sort_unstable_by(|m1, m2| m1.name.cmp(&m2.name));
-                c.modules.dedup_by(|m1, m2| m1.name == m2.name);
+            c.modules.sort_unstable_by(|m1, m2| m1.name.cmp(&m2.name));
+            c.modules.dedup_by(|m1, m2| m1.name == m2.name);
 
-                n == c.modules.len()
-            })
+            n == c.modules.len()
         });
 
         if unique {
@@ -64,21 +71,6 @@ impl Config {
             Err(Error::ModuleDuplicate)
         }
     }
-}
-
-#[derive(Deserialize, Debug)]
-pub struct Server {
-    pub address: String,
-    pub port: Option<u16>,
-    password: Option<String>,
-    pub nick: String,
-    nick_password: Option<String>,
-    pub max_burst_messages: Option<u32>,
-    pub burst_window_length: Option<u32>,
-    pub use_ssl: Option<bool>,
-
-    #[serde(rename = "channel")]
-    pub channels: Vec<Channel>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -188,7 +180,7 @@ impl<'de> Visitor<'de> for TriggerVisitor {
     }
 }
 
-impl Server {
+impl Config {
     pub(crate) fn as_irc_config(&self) -> IrcConfig {
         IrcConfig {
             server: Some(self.address.clone()),
