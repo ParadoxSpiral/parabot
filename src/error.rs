@@ -25,16 +25,24 @@ pub enum Error {
     /// A module name could not be resolved to a module
     ModuleNotFound(String),
 
-    ConfigFormat(toml::de::Error),
-    R2d2(r2d2::Error),
+    Diesel(diesel::result::Error),
+    DieselConn(diesel::ConnectionError),
     Io(std::io::Error),
     Irc(irc::error::IrcError),
+    Toml(toml::de::Error),
 }
 
-impl From<toml::de::Error> for Error {
+impl From<diesel::result::Error> for Error {
     #[inline]
-    fn from(e: toml::de::Error) -> Error {
-        Error::ConfigFormat(e)
+    fn from(e: diesel::result::Error) -> Error {
+        Error::Diesel(e)
+    }
+}
+
+impl From<diesel::ConnectionError> for Error {
+    #[inline]
+    fn from(e: diesel::ConnectionError) -> Error {
+        Error::DieselConn(e)
     }
 }
 
@@ -45,16 +53,16 @@ impl From<std::io::Error> for Error {
     }
 }
 
-impl From<r2d2::Error> for Error {
-    #[inline]
-    fn from(e: r2d2::Error) -> Error {
-        Error::R2d2(e)
-    }
-}
-
 impl From<irc::error::IrcError> for Error {
     #[inline]
     fn from(e: irc::error::IrcError) -> Error {
         Error::Irc(e)
+    }
+}
+
+impl From<toml::de::Error> for Error {
+    #[inline]
+    fn from(e: toml::de::Error) -> Error {
+        Error::Toml(e)
     }
 }

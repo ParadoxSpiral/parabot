@@ -15,9 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
-use diesel::{r2d2::ConnectionManager, sqlite::SqliteConnection};
 use irc::client::IrcClient;
-use r2d2::PooledConnection;
 
 use std::sync::Arc;
 
@@ -27,6 +25,8 @@ use crate::{message::MessageContext, *};
 mod choose;
 #[cfg(feature = "modules")]
 mod dice;
+#[cfg(feature = "modules")]
+mod weather;
 
 #[cfg(feature = "modules")]
 pub use self::choose::Choose;
@@ -34,19 +34,6 @@ pub use self::choose::Choose;
 pub use self::dice::Dice;
 
 pub use parabot_derive::module;
-
-#[cfg(feature = "modules")]
-pub(crate) fn load_module(db: &DbConn, cfg: &mut ModuleCfg) -> Result<Option<Box<Module>>> {
-    match &*cfg.name {
-        "dice" => Ok(Some(Box::new(Dice::new()))),
-        "choose" => Ok(Some(Box::new(Choose))),
-        _ => Ok(None),
-    }
-}
-
-pub type DbConn = PooledConnection<ConnectionManager<SqliteConnection>>;
-/// Key: Channel name, module name. Value: Module configuration, Module pointer
-pub(crate) type ModuleContext = HashMap<(String, String), (ModuleCfg, Box<Module>)>;
 
 pub trait Module: Send {
     fn handles(&self, _stage: Stage) -> bool;
@@ -97,3 +84,15 @@ pub trait Module: Send {
         unreachable!()
     }
 }
+
+#[cfg(feature = "modules")]
+pub(crate) fn load_module(db: &DbConn, cfg: &mut ModuleCfg) -> Result<Option<Box<Module>>> {
+    match &*cfg.name {
+        "choose" => Ok(Some(Box::new(Choose))),
+        "dice" => Ok(Some(Box::new(Dice::new()))),
+        _ => Ok(None),
+    }
+}
+
+/// Key: Channel name, module name. Value: Module configuration, Module pointer
+pub(crate) type ModuleContext = HashMap<(String, String), (ModuleCfg, Box<Module>)>;

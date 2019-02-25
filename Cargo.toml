@@ -9,12 +9,11 @@ authors = ["Jonathan Schleußer <ParadoxSpiral@riseup.net>"]
 
 [dependencies]
 chrono = "0.4"
-diesel = {version = "1", default-features = false, features = ["sqlite", "r2d2"]}
+diesel = { version = "1", default-features = false, features = ["sqlite"] }
 futures = "0.1"
 linkify = "0.3"
-parabot-derive = {path = "parabot-derive"}
-r2d2 = "0.8"
-serde = {version = "1", features = ["derive"]}
+parabot-derive = { path = "parabot-derive" }
+serde = { version = "1", features = ["derive"] }
 toml = "0.4"
 tokio = "0.1"
 unicode-segmentation = "1"

@@ -15,12 +15,10 @@
 // You should have received a copy of the GNU General Public License
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
+// TODO: Remove this once diesel's macros can be refered to as 2018 paths
 #[cfg(feature = "modules")]
-extern crate rand;
-#[cfg(feature = "modules")]
-extern crate regex;
-#[cfg(feature = "modules")]
-extern crate shlex;
+#[cfg_attr(feature = "modules", macro_use)]
+extern crate diesel;
 
 pub mod config;
 pub mod error;
@@ -30,18 +28,18 @@ pub mod prelude {
     pub use crate::{
         config::{Config, Module as ModuleCfg},
         message::{IrcMessageExt, Message, MessageContext, Stage, Trigger},
-        modules::{module, DbConn, Module},
+        modules::{module, Module},
         Builder,
     };
+    pub use diesel::SqliteConnection as DbConn;
     pub use irc::client::IrcClient;
     pub use std::sync::Arc;
 }
 
 use chrono::Utc;
-use diesel::r2d2::ConnectionManager;
+use diesel::{sqlite::SqliteConnection, Connection};
 use futures::sync::mpsc;
 use irc::client::{ext::ClientExt, Client, IrcClient};
-use r2d2::Pool;
 use tokio::{prelude::*, timer::Delay};
 
 use std::{collections::HashMap, path::Path, sync::Arc, time::Instant};
@@ -111,11 +109,10 @@ impl<'c, 'l> Builder<'c, 'l> {
             .loader
             .expect("No module loader specified, but default modules disabled");
 
-        // Check/initialize database
-        let db_pool = Pool::new(ConnectionManager::new(config.database.clone()))?;
+        // Initialize database connection
+        let db = SqliteConnection::establish(&config.database)?;
 
         // Setup modules
-        let db = db_pool.get()?;
         let mut modules = ModuleContext::new();
         for channel in &mut config.channels {
             for mut cfg in &mut channel.modules {
