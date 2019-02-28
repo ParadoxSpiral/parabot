@@ -21,6 +21,7 @@ use serde::{
     Deserialize, Deserializer,
 };
 use toml::Value;
+use url::Url;
 
 use std::{collections::HashMap, io::Read, path::Path};
 
@@ -158,16 +159,26 @@ impl<'de> Visitor<'de> for TriggerVisitor {
                 let (mut allowed, mut ignored) = (vec![], vec![]);
                 for dom in &mut (&s[9..s.len() - 1]).split(',') {
                     let ignore = dom.starts_with('!');
-                    if !dom.starts_with("http") || !dom.starts_with("!http") {
-                        if ignore {
-                            ignored.push(format!("https://{}", &dom[1..]));
-                        } else {
-                            allowed.push(format!("https://{}", dom));
+                    let dom = if ignore { &dom[1..] } else { &dom };
+                    match Url::parse(&dom).as_ref().map(|u| u.domain()) {
+                        Err(e) => {
+                            return Err(de::Error::invalid_value(
+                                Unexpected::Str(&format!("Failed to parse URL: {}", e)),
+                                &self,
+                            ));
                         }
-                    } else if ignore {
-                        ignored.push(dom[1..].to_string());
-                    } else {
-                        allowed.push(dom.to_string());
+                        Ok(None) => {
+                            return Err(de::Error::invalid_value(
+                                Unexpected::Str(&"URL has no domain"),
+                                &self,
+                            ));
+                        }
+                        Ok(Some(dom)) if ignore => {
+                            ignored.push(dom.to_string());
+                        }
+                        Ok(Some(dom)) => {
+                            allowed.push(dom.to_string());
+                        }
                     }
                 }
                 Ok(ConfigTrigger::Domains(allowed, ignored))

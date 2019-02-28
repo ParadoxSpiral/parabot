@@ -78,8 +78,8 @@ pub enum Trigger<'msg> {
     Explicit(&'msg str),
     /// The module is called when a `/me <THING>` was at the start of a PRIVMSG, the data is the ca <THING>
     Action(&'msg str),
-    /// THe module is called if there were matching URL(s) in a PRIVMSG
-    Urls(Vec<&'msg str>),
+    /// The module is called if there were matching URL(s) in a PRIVMSG
+    Urls(Vec<String>),
 }
 
 impl<'msg> Trigger<'msg> {
@@ -170,13 +170,18 @@ pub(crate) fn cfg_trigger_match<'m>(
                     let mut finder = LinkFinder::new();
                     finder.kinds(&[LinkKind::Url]);
 
-                    let urls: Vec<&str> = finder
+                    // TODO: With exitential types, this can return impl Iterator<Item = &str>
+                    let urls: Vec<String> = finder
                         .kinds(&[LinkKind::Url])
                         .links(content)
-                        .map(|l| l.as_str())
-                        // FIXME: .contains fails to resolve for some reason…
-                        .filter(|l| {
-                            allowed.iter().any(|a| a == l) && !ignored.iter().any(|i| i == l)
+                        .map(|l| Url::parse(l.as_str()).unwrap())
+                        .filter_map(|u| {
+                            u.domain()
+                                .filter(|d| {
+                                    allowed.iter().any(|a| a == d)
+                                        && !ignored.iter().any(|i| i == d)
+                                })
+                                .map(|s| s.to_string())
                         })
                         .collect();
 
