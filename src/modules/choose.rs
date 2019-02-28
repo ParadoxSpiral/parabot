@@ -34,13 +34,12 @@ pub struct Choose;
 #[module(Choose, received)]
 fn received(mctx: &Arc<MessageContext>, msg: &Message, trigger: Trigger) {
     // This module only uses the explicit trigger type, i.e. `.choose something or another`
-    if let Trigger::Explicit(opts) = trigger {
-        let split = shlex::split(opts).unwrap();
-        let choice = split.choose(&mut thread_rng()).unwrap();
-        // The reply macro sends either to a channel or in a query, depending how the msg was sent
-        // to parabot. The message will be split if too long, and sent ASAP.
-        mctx.reply(msg, choice.to_owned());
-    } else {
-        panic!("choose module's triggers wrongly configured")
-    }
+    let opts = trigger.as_explicit();
+
+    let split = shlex::split(opts).unwrap();
+    let choice = split.choose(&mut thread_rng()).unwrap();
+
+    // The reply macro sends either to a channel or in a query, depending how the msg was sent
+    // to parabot. The message will be split if too long, and sent ASAP.
+    mctx.reply(msg, choice.to_owned());
 }

@@ -17,6 +17,7 @@ serde = { version = "1", features = ["derive"] }
 toml = "0.4"
 tokio = "0.1"
 unicode-segmentation = "1"
+url = "1"
 
 # Optional module deps
 rand = {version = "0.6", optional = true}

@@ -24,6 +24,7 @@ use irc::{
 };
 use linkify::{LinkFinder, LinkKind};
 use unicode_segmentation::UnicodeSegmentation;
+use url::Url;
 
 use std::fmt::Display;
 
@@ -79,6 +80,18 @@ pub enum Trigger<'msg> {
     Action(&'msg str),
     /// THe module is called if there were matching URL(s) in a PRIVMSG
     Urls(Vec<&'msg str>),
+}
+
+impl<'msg> Trigger<'msg> {
+    #[inline]
+    /// Unwrap the trigger to get the inner message, panics when `self` is not a `Trigger::Explicit`.
+    pub fn as_explicit(&'msg self) -> &'msg str {
+        if let Trigger::Explicit(t) = self {
+            t
+        } else {
+            panic!("Expected explicit trigger, got {:?}", self)
+        }
+    }
 }
 
 pub trait IrcMessageExt {
