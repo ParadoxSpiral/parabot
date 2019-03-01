@@ -23,15 +23,16 @@ use std::sync::Arc;
 use crate::prelude::*;
 
 // We declare this struct as the state of a module, that has the given (mandatory) help message,
-// and will implement a handler for Stage::Received
-#[module(help = ".choose \"one\" option\\ of 'some'", received)]
+// and will implement a handler for Stage::Received. If multiple stages are handled, the handles
+// argument should be repeated for each one.
+#[module(help = ".choose \"one\" option\\ of 'some'", handles = "received")]
 pub struct Choose;
 
 // We declare this function as the Stage::received handler for the Choose module.
 // The parameters are the same as the corresponding ones of the Module trait, but with the macro
 // we can omit ones we don't need to keep our definition simpler (in this case &mut Choose,
 // &Arc<IrcClient>, &mut ModuleCfg)
-#[module(Choose, received)]
+#[module(belongs_to = "Choose", handles = "received")]
 fn received(mctx: &Arc<MessageContext>, msg: &Message, trigger: Trigger) {
     // This module only uses the explicit trigger type, i.e. `.choose something or another`
     let opts = trigger.as_explicit();

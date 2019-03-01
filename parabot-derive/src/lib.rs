@@ -17,21 +17,18 @@
 
 extern crate proc_macro;
 
+use darling::{util::SpannedValue, FromMeta};
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, TokenStream as TokenStream2};
 use quote::quote;
 use syn::{
-    self,
-    parse::{Error, Parse, ParseStream, Result},
-    parse_macro_input,
-    spanned::Spanned,
-    FnArg, GenericArgument, ItemFn, ItemStruct, LitStr, Path, PathArguments, PathSegment, Token,
-    Type, TypePath, TypeReference,
+    self, parse::Error, parse_macro_input, spanned::Spanned, AttributeArgs, FnArg, GenericArgument,
+    ItemFn, ItemStruct, Path, PathArguments, PathSegment, Type, TypePath, TypeReference,
 };
 
 #[proc_macro_attribute]
 pub fn module(args: TokenStream, input: TokenStream) -> TokenStream {
-    // Check if we are called on a struct, or fn definition
+    let args = parse_macro_input!(args as AttributeArgs);
     if let Ok(parsed) = syn::parse::<ItemStruct>(input.clone()) {
         build_struct(args, parsed)
     } else if let Ok(parsed) = syn::parse::<ItemFn>(input) {
@@ -41,99 +38,85 @@ pub fn module(args: TokenStream, input: TokenStream) -> TokenStream {
     }
 }
 
-struct StructAttrs {
-    help: LitStr,
-    handles: TokenStream2,
-    impls: TokenStream2,
-}
-impl Parse for StructAttrs {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let id: Ident = input.parse()?;
-        let help = if id == "help" && input.peek(Token![=]) {
-            input.parse::<Token![=]>().unwrap();
-            input.parse::<LitStr>()?
-        } else {
-            return Err(Error::new(id.span(), "expected `help = \"…\"`"));
-        };
-        input
-            .parse::<Token![,]>()
-            .map_err(|_| input.error("expected at least one handler"))?;
-
-        let mut impls = TokenStream2::new();
-        let mut handles = TokenStream2::new();
-        for id in input.parse_terminated::<_, Token![,]>(Ident::parse)?.iter() {
-            match &*id.to_string() {
-                "connected" => {
-                    handles.extend(quote! {
-                        Stage::Connected => true,
-                    });
-                    impls.extend(quote! {
-                        fn connected(&mut self, client: &Arc<IrcClient>, mctx: &Arc<MessageContext>,
-                                     conn: &DbConn, cfg: &mut ModuleCfg) {
-                            self.impl_detail_handle_connected(client, mctx, conn, cfg)
-                        }
-                    });
-                }
-                "received" => {
-                    handles.extend(quote! {
-                        Stage::Received => true,
-                    });
-                    impls.extend(quote! {
-                        fn received(&mut self, client: &Arc<IrcClient>, mctx: &Arc<MessageContext>,
-                                    conn: &DbConn, cfg: &mut ModuleCfg, msg: &Message,
-                                    trigger: Trigger) {
-                            self.impl_detail_handle_received(client, mctx, conn, cfg, msg, trigger)
-                        }
-                    });
-                }
-                "pre_send" => {
-                    handles.extend(quote! {
-                        Stage::PreSend => true,
-                    });
-                    impls.extend(quote! {
-                        fn pre_send(&mut self, client: &Arc<IrcClient>, mctx: &Arc<MessageContext>,
-                                    conn: &DbConn, cfg: &mut ModuleCfg, msg: &Message) {
-                            self.impl_detail_handle_pre_send(client, mctx, conn, cfg, msg)
-                        }
-                    });
-                }
-                "post_send" => {
-                    handles.extend(quote! {
-                        Stage::PostSend => true,
-                    });
-                    impls.extend(quote! {
-                        fn post_send(&mut self, client: &Arc<IrcClient>, mctx: &Arc<MessageContext>,
-                                    conn: &DbConn, cfg: &mut ModuleCfg, msg: &Message) {
-                            self.impl_detail_handle_post_send(client, mctx, conn, cfg, msg)
-                        }
-                    });
-                }
-                _ => {
-                    return Err(
-                        input.error("expected one of: connected, received, pre_send, post_send")
-                    );
-                }
-            }
-        }
-        if handles.is_empty() {
-            return Err(input.error("expected at least one handler"));
-        }
-
-        Ok(Self {
-            help,
-            handles,
-            impls,
-        })
-    }
+#[derive(Debug, FromMeta)]
+enum Handler {
+    Connected,
+    Received,
+    #[darling(rename = "pre_send")]
+    PreSend,
+    #[darling(rename = "post_send")]
+    PostSend,
 }
 
-fn build_struct(args: TokenStream, parsed: ItemStruct) -> TokenStream {
-    let attrs = parse_macro_input!(args as StructAttrs);
+#[derive(Debug, FromMeta)]
+struct StructArgs {
+    help: String,
+    #[darling(multiple)]
+    handles: Vec<Handler>,
+}
+
+fn build_struct(args: AttributeArgs, parsed: ItemStruct) -> TokenStream {
+    let args = SpannedValue::new(
+        StructArgs::from_list(&args).unwrap(),
+        args.first().unwrap().span(),
+    );
 
     let name = &parsed.ident;
-    let help = attrs.help;
-    let handles = attrs.handles;
-    let impls = attrs.impls;
+    let help = &args.help;
+
+    if args.handles.is_empty() {
+        return Error::new(
+            args.span(),
+            "expected at least one handler: connected, received, pre_send, post_send",
+        )
+        .to_compile_error()
+        .into();
+    }
+
+    let mut impls = TokenStream2::new();
+    let mut handles = TokenStream2::new();
+    for handler in &args.handles {
+        match handler {
+            Handler::Connected => {
+                handles.extend(quote! { Stage::Connected => true, });
+                impls.extend(quote! {
+                    fn connected(&mut self, client: &Arc<IrcClient>, mctx: &Arc<MessageContext>,
+                                 conn: &DbConn, cfg: &mut ModuleCfg) {
+                        self.impl_handle_connected(client, mctx, conn, cfg)
+                    }
+                });
+            }
+            Handler::Received => {
+                handles.extend(quote! { Stage::Received => true, });
+                impls.extend(quote! {
+                    fn received(&mut self, client: &Arc<IrcClient>, mctx: &Arc<MessageContext>,
+                                conn: &DbConn, cfg: &mut ModuleCfg, msg: &Message,
+                                trigger: Trigger) {
+                        self.impl_handle_received(client, mctx, conn, cfg, msg, trigger)
+                    }
+                });
+            }
+            Handler::PreSend => {
+                handles.extend(quote! { Stage::PreSend => true, });
+                impls.extend(quote! {
+                    fn pre_send(&mut self, client: &Arc<IrcClient>, mctx: &Arc<MessageContext>,
+                                conn: &DbConn, cfg: &mut ModuleCfg, msg: &Message) {
+                        self.impl_handle_pre_send(client, mctx, conn, cfg, msg)
+                    }
+                });
+            }
+            Handler::PostSend => {
+                handles.extend(quote! { Stage::PostSend => true, });
+                impls.extend(quote! {
+                    fn post_send(&mut self, client: &Arc<IrcClient>, mctx: &Arc<MessageContext>,
+                                conn: &DbConn, cfg: &mut ModuleCfg, msg: &Message) {
+                        self.impl_handle_post_send(client, mctx, conn, cfg, msg)
+                    }
+                });
+            }
+        }
+    }
+
     let gen = quote! {
         #parsed
 
@@ -155,79 +138,47 @@ fn build_struct(args: TokenStream, parsed: ItemStruct) -> TokenStream {
     gen.into()
 }
 
-struct FnAttrs {
+#[derive(Debug, FromMeta)]
+struct FnArgs {
+    // TODO: Use Path to support non-local impls
+    #[darling(rename = "belongs_to")]
     impl_target: Ident,
-    fn_decl: TokenStream2,
-}
-impl Parse for FnAttrs {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let mut iter = input
-            .parse_terminated::<_, Token![,]>(Ident::parse)?
-            .into_iter();
-        let impl_target = iter
-            .next()
-            .ok_or_else(|| input.error("expected module ident"))?;
-        let fn_decl = match &*iter
-            .next()
-            .ok_or_else(|| input.error("expected handler kind"))?
-            .to_string()
-        {
-            "connected" => quote! {
-                    impl_detail_handle_connected(&mut self,
-                                                 client: &Arc<IrcClient>,
-                                                 mctx: &Arc<MessageContext>,
-                                                 conn: &DbConn,
-                                                 cfg: &mut ModuleCfg)
-            },
-            "received" => quote! {
-                    impl_detail_handle_received(&mut self,
-                                                client: &Arc<IrcClient>,
-                                                mctx: &Arc<MessageContext>,
-                                                conn: &DbConn,
-                                                cfg: &mut ModuleCfg,
-                                                msg: &Message,
-                                                trigger: Trigger)
-            },
-            "pre_send" => quote! {
-                    impl_detail_handle_pre_send(&mut self,
-                                                client: &Arc<IrcClient>,
-                                                mctx: &Arc<MessageContext>,
-                                                conn: &DbConn,
-                                                cfg: &mut ModuleCfg,
-                                                msg: &Message)
-            },
-            "post_send" => quote! {
-                    impl_detail_handle_post_send(&mut self,
-                                                 client: &Arc<IrcClient>,
-                                                 mctx: &Arc<MessageContext>,
-                                                 conn: &DbConn,
-                                                 cfg: &mut ModuleCfg,
-                                                 msg: &Message)
-            },
-            _ => {
-                return Err(input.error("expected one of: connected, received, pre_send, post_send"));
-            }
-        };
-
-        Ok(Self {
-            impl_target,
-            fn_decl,
-        })
-    }
+    handles: Handler,
 }
 
-fn build_fn(args: TokenStream, parsed: ItemFn) -> TokenStream {
-    let attrs = parse_macro_input!(args as FnAttrs);
-    let target = attrs.impl_target;
+fn build_fn(args: AttributeArgs, parsed: ItemFn) -> TokenStream {
+    let args = SpannedValue::new(
+        FnArgs::from_list(&args).unwrap(),
+        args.first().unwrap().span(),
+    );
 
-    let mut args = TokenStream2::new();
+    let fun = &parsed.ident;
+    let fun_decl = match args.handles {
+        Handler::Connected => quote! {
+            impl_handle_connected(&mut self, client: &Arc<IrcClient>, mctx: &Arc<MessageContext>,
+                                  conn: &DbConn, cfg: &mut ModuleCfg)
+        },
+        Handler::Received => quote! {
+            impl_handle_received(&mut self, client: &Arc<IrcClient>, mctx: &Arc<MessageContext>,
+                                 conn: &DbConn, cfg: &mut ModuleCfg, msg: &Message, trigger: Trigger)
+        },
+        Handler::PreSend => quote! {
+            impl_handle_pre_send(&mut self, client: &Arc<IrcClient>, mctx: &Arc<MessageContext>,
+                                 conn: &DbConn, cfg: &mut ModuleCfg, msg: &Message)
+        },
+        Handler::PostSend => quote! {
+            impl_handle_post_send(&mut self, client: &Arc<IrcClient>, mctx: &Arc<MessageContext>,
+                                  conn: &DbConn, cfg: &mut ModuleCfg, msg: &Message)
+        },
+    };
+
+    let impl_target = &args.impl_target;
+    let mut impl_args = TokenStream2::new();
     let mut iter = parsed.decl.inputs.iter();
-
     let err = |span| {
         Error::new(
             span,
-            "expected one type of: \
-             `&Arc<IrcClient>`, `&Arc<MessageContext>`, `&DbConn`, \
+            "expected one type of: `&Arc<IrcClient>`, `&Arc<MessageContext>`, `&DbConn`, \
              `&mut ModuleCfg`, `&Message`, `Trigger`",
         )
         .to_compile_error()
@@ -245,15 +196,15 @@ fn build_fn(args: TokenStream, parsed: ItemFn) -> TokenStream {
                         ref arguments,
                     } = segments[0];
                     match &*ident.to_string() {
-                        ty if ty == &target.to_string() => {
-                            args.extend(quote! { self, });
+                        ty if ty == &impl_target.to_string() => {
+                            impl_args.extend(quote! { self, });
                         }
                         "Arc" => {
                             let arguments =
                                 if let PathArguments::AngleBracketed(arguments) = arguments {
                                     arguments
                                 } else {
-                                    args.extend(err(arguments.span()));
+                                    impl_args.extend(err(arguments.span()));
                                     continue;
                                 };
                             match &arguments.args[0] {
@@ -264,37 +215,37 @@ fn build_fn(args: TokenStream, parsed: ItemFn) -> TokenStream {
                                     let PathSegment { ref ident, .. } = segments[0];
                                     match &*ident.to_string() {
                                         "IrcClient" => {
-                                            args.extend(quote! { client, });
+                                            impl_args.extend(quote! { client, });
                                         }
                                         "MessageContext" => {
-                                            args.extend(quote! { mctx, });
+                                            impl_args.extend(quote! { mctx, });
                                         }
                                         _ => {
-                                            args.extend(err(ident.span()));
+                                            impl_args.extend(err(ident.span()));
                                         }
                                     }
                                 }
                                 _ => {
-                                    args.extend(err(arg.ty.span()));
+                                    impl_args.extend(err(arg.ty.span()));
                                 }
                             }
                         }
                         "DbConn" => {
-                            args.extend(quote! { conn, });
+                            impl_args.extend(quote! { conn, });
                         }
                         "ModuleCfg" => {
-                            args.extend(quote! { cfg, });
+                            impl_args.extend(quote! { cfg, });
                         }
                         "Message" => {
-                            args.extend(quote! { msg, });
+                            impl_args.extend(quote! { msg, });
                         }
                         _ => {
-                            args.extend(err(ident.span()));
+                            impl_args.extend(err(ident.span()));
                         }
                     }
                 }
                 _ => {
-                    args.extend(err(arg.ty.span()));
+                    impl_args.extend(err(arg.ty.span()));
                 }
             },
             Type::Path(TypePath {
@@ -304,27 +255,25 @@ fn build_fn(args: TokenStream, parsed: ItemFn) -> TokenStream {
                 let PathSegment { ref ident, .. } = segments[0];
                 match &*ident.to_string() {
                     "Trigger" => {
-                        args.extend(quote! { trigger, });
+                        impl_args.extend(quote! { trigger, });
                     }
                     _ => {
-                        args.extend(err(ident.span()));
+                        impl_args.extend(err(ident.span()));
                     }
                 }
             }
             _ => {
-                args.extend(err(arg.ty.span()));
+                impl_args.extend(err(arg.ty.span()));
             }
         }
     }
 
-    let fun = &parsed.ident;
-    let fn_decl = attrs.fn_decl;
     let gen = quote! {
         #parsed
 
-        impl #target {
-            fn #fn_decl {
-                #fun(#args)
+        impl #impl_target {
+            fn #fun_decl {
+                #fun(#impl_args)
             }
         }
     };

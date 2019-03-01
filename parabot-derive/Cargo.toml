@@ -8,6 +8,7 @@ authors = ["Jonathan Schleußer <ParadoxSpiral@riseup.net>"]
 proc-macro = true
 
 [dependencies]
+darling = "0.8"
 proc-macro2 = "0.4"
 syn = {version = "0.15", default-features = false, features = ["full", "parsing"]}
 quote = "0.6"

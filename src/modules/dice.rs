@@ -25,7 +25,7 @@ use crate::prelude::*;
 
 #[module(
     help = "'.roll [x]d<n>[, …]': roll 1 or more x (or 1) n sided dice",
-    received
+    handles = "received"
 )]
 pub struct Dice {
     regex: Regex,
@@ -40,7 +40,7 @@ impl Dice {
     }
 }
 
-#[module(Dice, received)]
+#[module(belongs_to = "Dice", handles = "received")]
 fn received(state: &mut Dice, mctx: &Arc<MessageContext>, msg: &Message, trigger: Trigger) {
     let to_roll = match trigger {
         Trigger::Explicit(r) => r,
