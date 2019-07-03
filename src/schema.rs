@@ -15,4 +15,36 @@
 // You should have received a copy of the GNU General Public License
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
-infer_schema!("./parabot_empty.db");
+table! {
+    geocode_cache (location) {
+        location -> Text,
+        latitude -> Float,
+        longitude -> Float,
+        reverse_location -> Text,
+    }
+}
+
+table! {
+    location_cache (server, nick) {
+        server -> Text,
+        nick -> Text,
+        location -> Text,
+    }
+}
+
+table! {
+    pending_tells (date, message) {
+        date -> Text,
+        server_addr -> Text,
+        channel -> Nullable<Text>,
+        source_nick -> Text,
+        target_nick -> Text,
+        message -> Text,
+    }
+}
+
+allow_tables_to_appear_in_same_query!(
+    geocode_cache,
+    location_cache,
+    pending_tells,
+);

@@ -15,7 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
-use irc::client::server::IrcServer;
+use irc::client::IrcClient;
 use irc::client::data::config::Config as IrcConfig;
 use toml::de;
 
@@ -63,8 +63,8 @@ pub struct ChannelCfg {
 }
 
 impl ServerCfg {
-    pub fn new_ircserver(&self) -> Result<IrcServer> {
-        Ok(IrcServer::from_config(IrcConfig {
+    pub fn new_irc_client(&self) -> Result<IrcClient> {
+        Ok(IrcClient::from_config(IrcConfig {
             nickname: Some(self.nickname.clone()),
             alt_nicks: self.alt_nicknames.clone(),
             nick_password: Some(self.nick_password.clone()),
@@ -110,7 +110,7 @@ pub fn parse_config(input: &str) -> Result<Config> {
                 .iter()
                 .any(|c| c.modules.iter().any(|m| m == "weather"))
         {
-            bail!(
+            panic!(
                 "Weather module enabled on {:?}, but no weather API secret or geocoding key given",
                 &srv.address
             );
@@ -119,7 +119,7 @@ pub fn parse_config(input: &str) -> Result<Config> {
                 .iter()
                 .any(|c| c.modules.iter().any(|m| m == "wolframaplha"))
         {
-            bail!(
+            panic!(
                 "Wolframalpha module enabled on {:?}, but no appid given",
                 &srv.address
             );
@@ -128,7 +128,7 @@ pub fn parse_config(input: &str) -> Result<Config> {
                 .iter()
                 .any(|c| c.modules.iter().any(|m| m == "youtube"))
         {
-            bail!(
+            panic!(
                 "Youtube module enabled on {:?}, but no key given",
                 &srv.address
             );
@@ -137,7 +137,7 @@ pub fn parse_config(input: &str) -> Result<Config> {
                 .iter()
                 .any(|c| c.modules.iter().any(|m| m == "wormy"))
         {
-            bail!(
+            panic!(
                 "Wormy module enabled on {:?}, but no nick given",
                 &srv.address
             );
@@ -146,7 +146,7 @@ pub fn parse_config(input: &str) -> Result<Config> {
                 .iter()
                 .any(|c| c.modules.iter().any(|m| m == "google"))
         {
-            bail!(
+            panic!(
                 "Google module enabled on {:?}, but no search id given",
                 &srv.address
             );

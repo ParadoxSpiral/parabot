@@ -15,12 +15,11 @@
 // You should have received a copy of the GNU General Public License
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
-use diesel::result;
 use diesel::Connection;
 use diesel::sqlite::SqliteConnection;
 use irc::client::prelude::*;
-use parking_lot::{Mutex, RwLock};
-use rand::{thread_rng, Rng};
+use parking_lot::{Mutex, RwLock, RwLockWriteGuard};
+use rand::{thread_rng, seq::SliceRandom};
 use rayon::prelude::*;
 use regex::Regex;
 use reqwest::Url;
@@ -58,7 +57,7 @@ pub fn init(cfg: &Config, log: &Logger) -> Result<()> {
     weather::init(cfg, log)
 }
 
-pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> Result<()> {
+pub fn handle(cfg: &ServerCfg, srv: &IrcClient, log: &Logger, msg: &Message) -> Result<()> {
     match msg.command {
         // Currently uninteresting messages
         Command::NOTICE(..)
@@ -98,7 +97,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                 .find(|c| c.name == content[1])
                 .and_then(|c| c.password.as_ref())
             {
-                srv.send_join_with_keys(&content[1], key)?
+                srv.send_join_with_keys::<&str, &str>(&content[1], key)?
             }
         }
         Command::Raw(ref s, ..) if s == "MODE" => {
@@ -261,7 +260,7 @@ pub fn handle(cfg: &ServerCfg, srv: &IrcServer, log: &Logger, msg: &Message) -> 
                 {
                     trace!(log, "Starting .choose");
                     let opts = shlex::split(&content[8..]).unwrap();
-                    let reply = thread_rng().choose(&opts).unwrap();
+                    let reply = opts.choose(&mut thread_rng()).unwrap();
                     send_segmented_message(cfg, srv, log, reply_target, &reply)?;
                     if module_enabled_channel(cfg, &*target, "wormy") {
                         LAST_MESSAGE.store(true, Ordering::Release);
@@ -343,45 +342,33 @@ where
     let establish_conn = || -> Result<Mutex<SqliteConnection>> {
         SqliteConnection::establish(&cfg.database)
             .map(Mutex::new)
-            .map_err(|err| ErrorKind::DieselConn(err).into())
+            .map_err(|err| err.into())
     };
 
     let mut guard = (*DATABASE_CONNS).write();
     if !guard.contains_key(&cfg.address) {
         guard.insert(cfg.address.clone(), establish_conn()?);
     }
-    let guard = guard.downgrade();
+    let guard = RwLockWriteGuard::downgrade(guard);
     let res = fun(&guard.get(&cfg.address).unwrap().lock());
-    if let Err(e) = res {
-        // TODO(TEST): Are these the only errors when the db conn dcs/errs?
-        match *e.kind() {
-            ErrorKind::Diesel(result::Error::DatabaseError(
-                result::DatabaseErrorKind::UnableToSendCommand,
-                _,
-            ))
-            | ErrorKind::Diesel(result::Error::DatabaseError(
-                result::DatabaseErrorKind::__Unknown,
-                _,
-            )) => {
-                drop(guard);
-                let mut guard = (*DATABASE_CONNS).write();
-                guard.remove(&cfg.address);
-                guard.insert(cfg.address.clone(), establish_conn()?);
-                let guard = guard.downgrade();
-                // FIXME: Why is the local var required?…
-                let r = fun(&guard.get(&cfg.address).unwrap().lock());
-                r
-            }
-            _ => Err(e),
+    match res {
+        Err(_) => {
+            drop(guard);
+            let mut guard = (*DATABASE_CONNS).write();
+            guard.remove(&cfg.address);
+            guard.insert(cfg.address.clone(), establish_conn()?);
+            let guard = RwLockWriteGuard::downgrade(guard);
+            // FIXME: Why is the local var required?…
+            let r = fun(&guard.get(&cfg.address).unwrap().lock());
+            r
         }
-    } else {
-        res
+        res => res,
     }
 }
 
 fn send_segmented_message(
     cfg: &ServerCfg,
-    srv: &IrcServer,
+    srv: &IrcClient,
     log: &Logger,
     target: &str,
     msg: &str,

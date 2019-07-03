@@ -25,6 +25,7 @@ extern crate forecast;
 extern crate html5ever;
 extern crate humansize;
 extern crate irc;
+extern crate mime;
 extern crate parking_lot;
 extern crate percent_encoding;
 extern crate rand;
@@ -43,10 +44,6 @@ extern crate wolfram_alpha;
 
 #[macro_use]
 extern crate diesel;
-#[macro_use]
-extern crate diesel_infer_schema;
-#[macro_use]
-extern crate error_chain;
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]
@@ -71,25 +68,107 @@ mod modules;
 pub mod schema;
 
 mod errors {
-    error_chain! {
-        foreign_links {
-            Irc(::irc::error::Error);
-            Toml(::toml::de::Error);
-            Diesel(::diesel::result::Error);
-            DieselConn(::diesel::result::ConnectionError);
-            Reqwest(::reqwest::Error);
-            Io(::std::io::Error);
-            Utf8String(::std::string::FromUtf8Error);
-            Utf8Str(::std::str::Utf8Error);
-            Ddg(::ddg::query::Error);
-            WolframAlpha(::wolfram_alpha::Error);
-            Json(::serde_json::Error);
-            UrlParse(::reqwest::UrlError);
+    pub type Result<T> = ::std::result::Result<T, Error>;
+
+    #[derive(Debug)]
+    pub enum Error {
+        NoExtractableData,
+
+        Toml(::toml::de::Error),
+        Diesel(::diesel::result::Error),
+        DieselConn(::diesel::result::ConnectionError),
+        Reqwest(::reqwest::Error),
+        Io(::std::io::Error),
+        Irc(::irc::error::IrcError),
+        ConfigError(irc::error::ConfigError),
+        Utf8String(::std::string::FromUtf8Error),
+        Utf8Str(::std::str::Utf8Error),
+        Ddg(::ddg::query::Error),
+        WolframAlpha(::wolfram_alpha::Error),
+        Json(::serde_json::Error),
+        UrlParse(::reqwest::UrlError),
+    }
+
+    impl From<diesel::result::Error> for Error {
+        #[inline]
+        fn from(e: diesel::result::Error) -> Error {
+            Error::Diesel(e)
         }
-        errors {
-            NoExtractableData {
-                description("The url did not serve any usable data")
-            }
+    }
+
+    impl From<irc::error::ConfigError> for Error {
+        #[inline]
+        fn from(e: irc::error::ConfigError) -> Error {
+            Error::ConfigError(e)
+        }
+    }
+    impl From<diesel::ConnectionError> for Error {
+        #[inline]
+        fn from(e: diesel::ConnectionError) -> Error {
+            Error::DieselConn(e)
+        }
+    }
+
+    impl From<std::io::Error> for Error {
+        #[inline]
+        fn from(e: std::io::Error) -> Error {
+            Error::Io(e)
+        }
+    }
+
+    impl From<std::string::FromUtf8Error> for Error {
+        #[inline]
+        fn from(e: std::string::FromUtf8Error) -> Error {
+            Error::Utf8String(e)
+        }
+    }
+
+    impl From<std::str::Utf8Error> for Error {
+        #[inline]
+        fn from(e: std::str::Utf8Error) -> Error {
+            Error::Utf8Str(e)
+        }
+    }
+
+    impl From<irc::error::IrcError> for Error {
+        #[inline]
+        fn from(e: irc::error::IrcError) -> Error {
+            Error::Irc(e)
+        }
+    }
+
+    impl From<toml::de::Error> for Error {
+        #[inline]
+        fn from(e: toml::de::Error) -> Error {
+            Error::Toml(e)
+        }
+    }
+
+    impl From<::reqwest::Error> for Error {
+        #[inline]
+        fn from(e: ::reqwest::Error) -> Error {
+            Error::Reqwest(e)
+        }
+    }
+
+    impl From<::reqwest::UrlError> for Error {
+        #[inline]
+        fn from(e: ::reqwest::UrlError) -> Error {
+            Error::UrlParse(e)
+        }
+    }
+
+    impl From<::ddg::query::Error> for Error {
+        #[inline]
+        fn from(e: ::ddg::query::Error) -> Error {
+            Error::Ddg(e)
+        }
+    }
+
+    impl From<::wolfram_alpha::Error> for Error {
+        #[inline]
+        fn from(e: ::wolfram_alpha::Error) -> Error {
+            Error::WolframAlpha(e)
         }
     }
 }
@@ -150,7 +229,7 @@ fn main() {
         let log = Arc::new(SLOG_ROOT.new(o!(
                             "Server" => format!("{} on {}:{}", cfg.nickname, cfg.address, cfg.port),
                             "Channels" => format!("{:?}", cfg.channels))));
-        state.push((Arc::new(wait_err(cfg.new_ircserver())), Arc::new(cfg), log));
+        state.push((Arc::new(wait_err(cfg.new_irc_client())), Arc::new(cfg), log));
     }
     crossbeam::scope(move |scope| {
         for &(ref srv, ref cfg, ref log) in &state {
@@ -160,7 +239,7 @@ fn main() {
             let srv1 = srv.clone();
             let srv2 = srv.clone();
             let log = log.clone();
-            scope.spawn(move || {
+            scope.spawn(move |_| {
                 // Handle registration etc
                 wait_err(srv1.identify());
                 wait_err(srv1.send_mode(&cfg.nickname, &[Mode::Plus(UserMode::Invisible, None)]));

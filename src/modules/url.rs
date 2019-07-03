@@ -21,13 +21,13 @@ use html5ever;
 use html5ever::rcdom::{Handle, NodeData, RcDom};
 use html5ever::tendril::TendrilSink;
 use humansize::{FileSize, file_size_opts as Options};
+use mime::Mime;
 use percent_encoding::percent_decode;
 use reqwest;
 use reqwest::{Client, Url};
-use reqwest::header::{ContentLength, ContentType, Headers};
-use reqwest::mime;
+use reqwest::header::{CONTENT_LENGTH, CONTENT_TYPE, HeaderMap};
 use serde_json::Value;
-use urlshortener::{Provider, UrlShortener};
+use urlshortener::{providers::Provider, client::UrlShortener};
 use wolfram_alpha::query;
 
 use std::borrow::Borrow;
@@ -148,7 +148,7 @@ pub fn handle(cfg: &ServerCfg, url: Url, target: &str, regex_match: bool) -> Res
                 pods[0].subpods[0].plaintext.as_ref().unwrap()
             ))
         } else {
-            Err(ErrorKind::NoExtractableData.into())
+            Err(Error::NoExtractableData)
         }
     } else if module_enabled_channel(cfg, target, "jisho") && domain.ends_with("jisho.org") {
         jisho::handle(
@@ -159,7 +159,7 @@ pub fn handle(cfg: &ServerCfg, url: Url, target: &str, regex_match: bool) -> Res
         )
     } else if module_enabled_channel(cfg, target, "google") && domain.contains(".google.") {
         if url.path_segments().unwrap().last().unwrap() != "search" {
-            return Err(ErrorKind::NoExtractableData.into());
+            return Err(Error::NoExtractableData);
         }
         let body: Value = reqwest::get(&format!(
             "https://www.googleapis.com/customsearch/v1?num=3&fields=items\
@@ -175,6 +175,7 @@ pub fn handle(cfg: &ServerCfg, url: Url, target: &str, regex_match: bool) -> Res
             ).decode_utf8()?
         ))?.json()?;
 
+        let shortener = UrlShortener::new()?;
         let mut formatted = String::new();
         for (n, item) in body.pointer("/items")
             .unwrap()
@@ -187,8 +188,7 @@ pub fn handle(cfg: &ServerCfg, url: Url, target: &str, regex_match: bool) -> Res
             formatted.push_str(&format!(
                 "\x02{}\x02: {} [{}]{}",
                 n + 1,
-                UrlShortener::new()?
-                    .try_generate(url, Some(&[Provider::IsGd, Provider::VGd, Provider::HmmRs]))?,
+                shortener.try_generate(url, Some(&[Provider::IsGd, Provider::VGd, Provider::HmmRs]))?,
                 item.pointer("/snippet")
                     .unwrap()
                     .as_str()
@@ -202,18 +202,18 @@ pub fn handle(cfg: &ServerCfg, url: Url, target: &str, regex_match: bool) -> Res
         let client = Client::new();
         let response = client.head(url.as_str()).send()?;
         let headers = response.headers();
-        let content_length = headers.get::<ContentLength>();
-        let content_type = headers.get::<ContentType>();
+        let content_length = headers.get(CONTENT_LENGTH);
+        let content_type = headers.get(CONTENT_TYPE);
 
         match (content_length, content_type) {
-            (Some(l), Some(mime)) if mime.0.subtype() != mime::HTML => Ok(format!(
+            (Some(l), Some(mime)) if mime.to_str().unwrap().parse::<Mime>().unwrap().subtype() != mime::HTML => Ok(format!(
                 "{}{}; {}",
                 sign,
-                mime,
-                l.file_size(Options::BINARY).unwrap()
+                mime.to_str().unwrap(),
+                l.to_str().unwrap().parse::<usize>().unwrap().file_size(Options::BINARY).unwrap()
             )),
-            (None, Some(mime)) if mime.0.subtype() != mime::HTML => Ok(format!("┗━ {}", mime)),
-            (_, Some(mime)) if mime.0.subtype() == mime::HTML => {
+            (None, Some(mime)) if mime.to_str().unwrap().parse::<Mime>().unwrap().subtype() != mime::HTML => Ok(format!("┗━ {}", mime.to_str().unwrap())),
+            (_, Some(mime)) if mime.to_str().unwrap().parse::<Mime>().unwrap().subtype() == mime::HTML => {
                 let mut response = client.get(url.as_str()).send()?;
                 let mut bytes = Vec::new();
                 response.read_to_end(&mut bytes)?;
@@ -228,11 +228,11 @@ pub fn handle(cfg: &ServerCfg, url: Url, target: &str, regex_match: bool) -> Res
 
                 let mut title = String::new();
                 let mut description = String::new();
-                walk_for_metadata(dom.document, &mut title, &mut description);
+                walk_for_metadata(&dom.document, &mut title, &mut description);
                 let title = title.trim();
                 let description = description.trim();
                 if title.is_empty() {
-                    Err(ErrorKind::NoExtractableData.into())
+                    Err(Error::NoExtractableData)
                 } else if !cfg!(feature = "show_description")
                     || ((description.is_empty() || domain.ends_with("imgur.com")
                         || domain.ends_with("github.com"))
@@ -245,7 +245,7 @@ pub fn handle(cfg: &ServerCfg, url: Url, target: &str, regex_match: bool) -> Res
                     Ok(format!("{}{} - {}", sign, title, description))
                 }
             }
-            _ => Err(ErrorKind::NoExtractableData.into()),
+            _ => Err(Error::NoExtractableData),
         }
     }
 }
@@ -262,25 +262,24 @@ fn pretty_number(num: &str) -> String {
     ret
 }
 
-fn body_from_charsets(bytes: Vec<u8>, headers: &Headers) -> Result<String> {
-    Ok(if let Some(charset) = headers
-        .get::<ContentType>()
-        .and_then(|ct| ct.get_param(mime::CHARSET))
-    {
+fn body_from_charsets(bytes: Vec<u8>, headers: &HeaderMap) -> Result<String> {
+    if let Some(ct) = headers.get(CONTENT_TYPE) {
+        let mime = ct.to_str().unwrap().parse::<Mime>();
+        let charset = mime.as_ref().unwrap().get_param(mime::CHARSET).unwrap();
         if charset == mime::UTF_8 {
-            String::from_utf8(bytes)?
+            Ok(String::from_utf8(bytes)?)
         } else {
-            encoding_from_whatwg_label(charset.as_ref())
+            Ok(encoding_from_whatwg_label(charset.as_ref())
                 .unwrap()
                 .decode(&bytes, DecoderTrap::Replace)
-                .unwrap()
+                .unwrap())
         }
     } else {
-        String::from_utf8(bytes)?
-    })
+        Ok(String::from_utf8(bytes)?)
+    }
 }
 
-fn walk_for_metadata(node: Handle, title: &mut String, description: &mut String) {
+fn walk_for_metadata(node: &Handle, title: &mut String, description: &mut String) {
     match node.data {
         NodeData::Element {
             ref name,
@@ -314,7 +313,7 @@ fn walk_for_metadata(node: Handle, title: &mut String, description: &mut String)
         | NodeData::Text { .. } => {}
     }
     for child in node.children.borrow().iter() {
-        walk_for_metadata(child.clone(), title, description);
+        walk_for_metadata(child, title, description);
     }
 }
 
@@ -430,7 +429,7 @@ mod jisho {
         if ret != sign {
             Ok(ret)
         } else {
-            Err(ErrorKind::NoExtractableData.into())
+            Err(Error::NoExtractableData)
         }
     }
 }

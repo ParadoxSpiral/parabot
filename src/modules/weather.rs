@@ -26,7 +26,6 @@ use irc::client::prelude::*;
 use parking_lot::RwLock;
 use regex::Regex;
 use reqwest::Client;
-use reqwest::header::{qitem, AcceptEncoding, Encoding};
 use serde_json::de;
 use serde_json::Value;
 use slog::Logger;
@@ -86,7 +85,7 @@ pub fn init(cfg: &Config, log: &Logger) -> Result<()> {
 
 pub fn handle(
     cfg: &ServerCfg,
-    srv: &IrcServer,
+    srv: &IrcClient,
     log: &Logger,
     msg: &str,
     nick: &str,
@@ -242,7 +241,6 @@ pub fn handle(
                 cfg.geocoding_key.as_ref().unwrap(),
                 location
             ))
-            .header(AcceptEncoding(vec![qitem(Encoding::Gzip)]))
             .send()?
             .json()?;
 
@@ -263,7 +261,7 @@ pub fn handle(
             );
         } else if status != 0 {
             crit!(log, "Geocoding request failed");
-            bail!("Geocoding request failed: {:?}", messages);
+            panic!("Geocoding request failed: {:?}", messages);
         }
         let lat = json.pointer("/results/0/locations/0/latLng/lat")
             .unwrap()
@@ -289,7 +287,6 @@ pub fn handle(
                 lat,
                 lng
             ))
-            .header(AcceptEncoding(vec![qitem(Encoding::Gzip)]))
             .send()?
             .json()?;
 
@@ -306,7 +303,7 @@ pub fn handle(
                     .to_owned(),
             );
         } else if status != 0 {
-            bail!("Reverse geocoding request failed: {:?}", messages);
+            panic!("Reverse geocoding request failed: {:?}", messages);
         }
         let city = json.pointer("/results/0/locations/0/adminArea5")
             .unwrap()
@@ -379,12 +376,10 @@ pub fn handle(
     }
     let mut res = api_client.get_forecast(builder.build())?;
     if !res.status().is_success() {
-        bail!("Failed to query weather API");
+        panic!("Failed to query weather API");
     }
 
-    let api_calls = ::std::str::from_utf8(
-        &res.headers().get_raw("X-Forecast-API-Calls").unwrap()[0],
-    ).unwrap()
+    let api_calls = &res.headers().get("X-Forecast-API-Calls").unwrap().to_str().unwrap()
         .parse::<usize>()
         .unwrap();
     info!(

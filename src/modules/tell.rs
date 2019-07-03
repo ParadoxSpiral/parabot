@@ -55,7 +55,7 @@ pub fn init(cfg: &Config, log: &Logger) -> Result<()> {
 
 pub fn handle_user_join(
     cfg: &ServerCfg,
-    srv: &IrcServer,
+    srv: &IrcClient,
     log: &Logger,
     msg: &Message,
 ) -> Result<()> {
@@ -104,7 +104,7 @@ pub fn handle_user_join(
 
 pub fn handle_names_reply(
     cfg: &ServerCfg,
-    srv: &IrcServer,
+    srv: &IrcClient,
     log: &Logger,
     msg: &Message,
 ) -> Result<()> {
@@ -168,7 +168,7 @@ pub fn handle_names_reply(
 
 fn send_tells(
     cfg: &ServerCfg,
-    srv: &IrcServer,
+    srv: &IrcClient,
     log: &Logger,
     tells: &[models::PendingTell],
 ) -> Result<()> {
