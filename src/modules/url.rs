@@ -15,7 +15,8 @@
 // You should have received a copy of the GNU General Public License
 // along with Parabot.  If not, see <http://www.gnu.org/licenses/>.
 
-use encoding::DecoderTrap;
+use encoding::{DecoderTrap, Encoding};
+use encoding::all::ISO_8859_1;
 use encoding::label::encoding_from_whatwg_label;
 use html5ever;
 use html5ever::rcdom::{Handle, NodeData, RcDom};
@@ -265,14 +266,15 @@ fn pretty_number(num: &str) -> String {
 fn body_from_charsets(bytes: Vec<u8>, headers: &HeaderMap) -> Result<String> {
     if let Some(ct) = headers.get(CONTENT_TYPE) {
         let mime = ct.to_str().unwrap().parse::<Mime>();
-        let charset = mime.as_ref().unwrap().get_param(mime::CHARSET).unwrap();
-        if charset == mime::UTF_8 {
-            Ok(String::from_utf8(bytes)?)
-        } else {
-            Ok(encoding_from_whatwg_label(charset.as_ref())
-                .unwrap()
-                .decode(&bytes, DecoderTrap::Replace)
-                .unwrap())
+        match mime.as_ref().unwrap().get_param(mime::CHARSET) {
+            None => Ok(ISO_8859_1.decode(&bytes, DecoderTrap::Replace).unwrap()),
+            Some(mime::UTF_8) => Ok(String::from_utf8(bytes)?),
+            Some(charset) => {
+                Ok(encoding_from_whatwg_label(charset.as_ref())
+                    .unwrap()
+                    .decode(&bytes, DecoderTrap::Replace)
+                    .unwrap())
+            },
         }
     } else {
         Ok(String::from_utf8(bytes)?)
